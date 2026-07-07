@@ -1,18 +1,16 @@
-package cmd
+package server
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/urfave/cli/v3"
-
 	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
-	"github.com/fabrizio/copilot-claude-proxy/internal/server"
 )
 
 const (
@@ -22,47 +20,39 @@ const (
 	shutdownTimeout = 5 * time.Second
 )
 
-func newStartCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "start",
-		Usage: "Run the Anthropic-compatible proxy server",
-		Flags: []cli.Flag{
-			portFlag(),
-			hostFlag(),
-			accountTypeFlag(),
-			githubTokenFlag(),
-			modelMapFlag(),
-			verboseFlag(),
-		},
-		Action: runStart,
-	}
+// RunConfig carries the dependencies of Run.
+type RunConfig struct {
+	Logger  *slog.Logger
+	Session *copilot.Session
+	Host    string
+	Port    int
 }
 
-func runStart(ctx context.Context, cmd *cli.Command) error {
-	application, err := bootstrap(ctx, cmd)
-	if err != nil {
-		return err
-	}
-	logger := application.logger
+// Run serves the proxy until the context is canceled, keeping the Copilot
+// token and model catalog fresh in the background and shutting down
+// gracefully.
+func Run(ctx context.Context, cfg RunConfig) error {
+	logger := cfg.Logger
+	session := cfg.Session
 
-	if refreshErr := application.catalog.Refresh(ctx); refreshErr != nil {
+	if refreshErr := session.Catalog.Refresh(ctx); refreshErr != nil {
 		logger.WarnContext(ctx, "initial model catalog fetch failed, retrying in the background",
 			"error", refreshErr)
 	} else {
-		logCatalogSummary(ctx, application)
+		logCatalogSummary(ctx, logger, session.Catalog)
 	}
 
-	go application.tokens.Run(ctx)
-	go application.catalog.Run(ctx, copilot.ModelRefreshInterval)
+	go session.Tokens.Run(ctx)
+	go session.Catalog.Run(ctx, copilot.ModelRefreshInterval)
 
-	proxy := server.New(server.Config{
+	proxy := New(Config{
 		Logger:  logger,
-		Copilot: application.client,
-		Catalog: application.catalog,
-		Tokens:  application.tokens,
+		Copilot: session.Client,
+		Catalog: session.Catalog,
+		Tokens:  session.Tokens,
 	})
 
-	addr := net.JoinHostPort(cmd.String("host"), strconv.Itoa(cmd.Int("port")))
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           proxy.Handler(),
@@ -95,14 +85,14 @@ func runStart(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func logCatalogSummary(ctx context.Context, application *app) {
-	models := application.catalog.Models()
+func logCatalogSummary(ctx context.Context, logger *slog.Logger, catalog *copilot.Catalog) {
+	models := catalog.Models()
 	anthropic := 0
 	for _, model := range models {
 		if model.SupportsAnthropicMessages() {
 			anthropic++
 		}
 	}
-	application.logger.InfoContext(ctx, "model catalog loaded",
+	logger.InfoContext(ctx, "model catalog loaded",
 		"models", len(models), "anthropic_models", anthropic)
 }

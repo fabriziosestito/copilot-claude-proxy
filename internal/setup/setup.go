@@ -1,17 +1,16 @@
-package cmd
+// Package setup configures Claude Code to use the proxy: it selects the
+// models (explicitly or interactively), plans the configuration changes, and
+// applies them after confirmation.
+package setup
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/urfave/cli/v3"
 
 	"github.com/fabrizio/copilot-claude-proxy/internal/claudecode"
 	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
@@ -20,54 +19,28 @@ import (
 var errNoAnthropicModels = errors.New(
 	"no models supporting the Anthropic Messages API are available on this Copilot account")
 
-// flagYes names the confirmation-skipping flag.
-const flagYes = "yes"
-
-func newSetupCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "setup",
-		Usage: "Write Claude Code configuration pointing it at this proxy",
-		Flags: []cli.Flag{
-			portFlag(),
-			hostFlag(),
-			&cli.StringFlag{
-				Name:    "model",
-				Aliases: []string{"m"},
-				Usage:   "Main model (requires --small-model; omit both for interactive selection)",
-			},
-			&cli.StringFlag{
-				Name:    "small-model",
-				Aliases: []string{"s"},
-				Usage:   "Small/fast model for background tasks (requires --model)",
-			},
-			&cli.BoolFlag{
-				Name:    "with-extras",
-				Aliases: []string{"e"},
-				Usage:   "Also write opinionated tuning vars (telemetry off, auto-compact, caching fix)",
-			},
-			&cli.BoolFlag{
-				Name:    flagYes,
-				Aliases: []string{"y"},
-				Usage:   "Apply changes without asking for confirmation",
-			},
-			accountTypeFlag(),
-			githubTokenFlag(),
-			verboseFlag(),
-		},
-		Action: runSetup,
-	}
+// Config describes a setup run. Model and SmallModel must be provided
+// together; when both are empty the models are selected interactively.
+type Config struct {
+	// Catalog is the refreshed model catalog of the Copilot account.
+	Catalog *copilot.Catalog
+	// ServerURL is the base URL Claude Code should call the proxy at.
+	ServerURL string
+	// Model and SmallModel request specific models by name or alias.
+	Model      string
+	SmallModel string
+	// WithExtras also writes opinionated tuning environment variables.
+	WithExtras bool
+	// AutoApprove applies destructive changes without asking.
+	AutoApprove bool
+	// In and Out carry the interactive prompts.
+	In  io.Reader
+	Out io.Writer
 }
 
-func runSetup(ctx context.Context, cmd *cli.Command) error {
-	application, err := bootstrap(ctx, cmd)
-	if err != nil {
-		return err
-	}
-	if refreshErr := application.catalog.Refresh(ctx); refreshErr != nil {
-		return refreshErr
-	}
-
-	eligible := eligibleModels(application.catalog)
+// Run selects the models and writes the Claude Code configuration.
+func Run(cfg Config) error {
+	eligible := eligibleModels(cfg.Catalog)
 	if len(eligible) == 0 {
 		return errNoAnthropicModels
 	}
@@ -75,40 +48,38 @@ func runSetup(ctx context.Context, cmd *cli.Command) error {
 	// A single stdin reader is shared by every prompt: a second bufio.Reader
 	// would lose whatever the first one already buffered (e.g. the trailing
 	// confirmation line of piped input).
-	stdin := bufio.NewReader(os.Stdin)
+	stdin := bufio.NewReader(cfg.In)
 
-	model, smallModel, err := chooseModels(cmd, application.catalog, eligible, stdin)
+	model, smallModel, err := chooseModels(cfg, eligible, stdin)
 	if err != nil {
 		return err
 	}
-	warnFableChineseBug(os.Stdout, model, smallModel)
+	warnFableChineseBug(cfg.Out, model, smallModel)
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
-	serverURL := "http://" + net.JoinHostPort(cmd.String("host"), strconv.Itoa(cmd.Int("port")))
 
 	setup, err := claudecode.PlanSetup(claudecode.SetupConfig{
 		Home: home,
 		Env: claudecode.EnvConfig{
-			ServerURL:  serverURL,
+			ServerURL:  cfg.ServerURL,
 			Model:      model,
 			SmallModel: smallModel,
-			WithExtras: cmd.Bool("with-extras"),
+			WithExtras: cfg.WithExtras,
 		},
 	})
 	if err != nil {
 		return err
 	}
 
-	return applySetup(setup, cmd.Bool(flagYes), stdin)
+	return applySetup(setup, cfg.AutoApprove, stdin, cfg.Out)
 }
 
 // applySetup previews the planned changes, asks for confirmation when they
 // overwrite existing values, and writes them.
-func applySetup(setup *claudecode.Setup, autoApprove bool, stdin *bufio.Reader) error {
-	out := os.Stdout
+func applySetup(setup *claudecode.Setup, autoApprove bool, stdin *bufio.Reader, out io.Writer) error {
 	if !setup.NeedsWrite() {
 		fmt.Fprintln(out, "Claude Code is already configured for this proxy - no changes needed.")
 		return nil
@@ -183,36 +154,36 @@ func eligibleModels(catalog *copilot.Catalog) []copilot.Model {
 	return eligible
 }
 
-// chooseModels returns the main and small models from flags or interactively.
+// chooseModels returns the main and small models from the config or
+// interactively.
 func chooseModels(
-	cmd *cli.Command,
-	catalog *copilot.Catalog,
+	cfg Config,
 	eligible []copilot.Model,
 	stdin *bufio.Reader,
 ) (copilot.Model, copilot.Model, error) {
-	mainFlag := strings.TrimSpace(cmd.String("model"))
-	smallFlag := strings.TrimSpace(cmd.String("small-model"))
+	mainRequested := strings.TrimSpace(cfg.Model)
+	smallRequested := strings.TrimSpace(cfg.SmallModel)
 
 	switch {
-	case mainFlag != "" && smallFlag != "":
-		model, err := findEligibleModel(catalog, eligible, mainFlag, "model")
+	case mainRequested != "" && smallRequested != "":
+		model, err := findEligibleModel(cfg.Catalog, eligible, mainRequested, "model")
 		if err != nil {
 			return copilot.Model{}, copilot.Model{}, err
 		}
-		smallModel, err := findEligibleModel(catalog, eligible, smallFlag, "small model")
+		smallModel, err := findEligibleModel(cfg.Catalog, eligible, smallRequested, "small model")
 		if err != nil {
 			return copilot.Model{}, copilot.Model{}, err
 		}
 		return model, smallModel, nil
-	case mainFlag != "" || smallFlag != "":
+	case mainRequested != "" || smallRequested != "":
 		return copilot.Model{}, copilot.Model{}, errors.New(
 			"--model and --small-model must be provided together, or neither for interactive selection")
 	default:
-		model, err := promptSelect(stdin, os.Stdout, "main", eligible)
+		model, err := promptSelect(stdin, cfg.Out, "main", eligible)
 		if err != nil {
 			return copilot.Model{}, copilot.Model{}, err
 		}
-		smallModel, err := promptSelect(stdin, os.Stdout, "small/fast", eligible)
+		smallModel, err := promptSelect(stdin, cfg.Out, "small/fast", eligible)
 		if err != nil {
 			return copilot.Model{}, copilot.Model{}, err
 		}

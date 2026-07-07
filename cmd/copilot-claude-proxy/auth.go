@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/fabrizio/copilot-claude-proxy/internal/auth"
 	"github.com/fabrizio/copilot-claude-proxy/internal/storage"
 )
 
@@ -41,6 +42,27 @@ func runAuth(ctx context.Context, cmd *cli.Command) error {
 		return nil
 	}
 
-	_, err = performDeviceFlow(ctx, &http.Client{}, store, logger)
+	_, err = auth.Login(ctx, &http.Client{}, store, logger, os.Stdout)
 	return err
+}
+
+func newLogoutCommand() *cli.Command {
+	return &cli.Command{
+		Name:   "logout",
+		Usage:  "Remove the GitHub token from the system keyring",
+		Action: runLogout,
+	}
+}
+
+func runLogout(_ context.Context, _ *cli.Command) error {
+	removed, err := storage.NewTokenStore().Clear()
+	if err != nil {
+		return err
+	}
+	if !removed {
+		fmt.Fprintln(os.Stdout, "No stored GitHub token found.")
+		return nil
+	}
+	fmt.Fprintln(os.Stdout, "Removed the GitHub token from the system keyring.")
+	return nil
 }

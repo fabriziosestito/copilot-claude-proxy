@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/cmd"
+	"github.com/urfave/cli/v3"
 )
 
 func main() {
@@ -21,7 +21,8 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := cmd.Run(ctx, os.Args); err != nil {
+	//nolint:wrapcheck // CLI errors are user-facing as-is.
+	if err := rootCommand().Run(ctx, os.Args); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return 0
 		}
@@ -29,4 +30,18 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func rootCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "copilot-claude-proxy",
+		Usage: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
+		Commands: []*cli.Command{
+			newAuthCommand(),
+			newLogoutCommand(),
+			newStartCommand(),
+			newModelsCommand(),
+			newSetupCommand(),
+		},
+	}
 }

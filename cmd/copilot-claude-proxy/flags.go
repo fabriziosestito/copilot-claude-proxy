@@ -1,32 +1,16 @@
-// Package cmd wires the command line interface of the proxy.
-package cmd
+package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 
 	"github.com/urfave/cli/v3"
 )
 
-// Run executes the CLI.
-func Run(ctx context.Context, args []string) error {
-	return newRootCommand().Run(ctx, args) //nolint:wrapcheck // CLI errors are user-facing as-is.
-}
-
-func newRootCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "copilot-claude-proxy",
-		Usage: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
-		Commands: []*cli.Command{
-			newAuthCommand(),
-			newLogoutCommand(),
-			newStartCommand(),
-			newModelsCommand(),
-			newSetupCommand(),
-		},
-	}
-}
+const (
+	defaultPort = 4141
+	defaultHost = "127.0.0.1"
+)
 
 func newLogger(verbose bool) *slog.Logger {
 	level := slog.LevelInfo

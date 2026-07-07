@@ -5,7 +5,7 @@ GOLANGCI_LINT_VERSION := v2.12.2
 all: build test lint
 
 build:
-	go build -o bin/copilot-claude-proxy .
+	go build -o bin/copilot-claude-proxy ./cmd/copilot-claude-proxy
 
 test: vet
 	go test -race ./...
