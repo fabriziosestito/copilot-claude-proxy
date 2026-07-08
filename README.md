@@ -16,19 +16,19 @@ Run it with `go run` (Go 1.25 or newer).
 Authenticate with GitHub (device flow; opens your browser automatically):
 
 ```console
-$ go run github.com/fabrizio/copilot-claude-proxy/cmd/copilot-claude-proxy@latest auth
+$ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest auth
 ```
 
 Generate the Claude Code configuration (interactive model selection):
 
 ```console
-$ go run github.com/fabrizio/copilot-claude-proxy/cmd/copilot-claude-proxy@latest setup
+$ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest setup
 ```
 
 Run the proxy:
 
 ```console
-$ go run github.com/fabrizio/copilot-claude-proxy/cmd/copilot-claude-proxy@latest start
+$ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest start
 ```
 
 Then, in another terminal:
@@ -85,7 +85,7 @@ so Claude Code injects it into every session:
 ## Building from source
 
 ```console
-$ git clone https://github.com/fabrizio/copilot-claude-proxy
+$ git clone https://github.com/fabriziosestito/copilot-claude-proxy
 $ cd copilot-claude-proxy
 $ make build
 ```
