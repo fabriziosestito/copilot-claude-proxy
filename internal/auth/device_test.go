@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/auth"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/auth"
 )
 
 func testAuthorization(server *httptest.Server) (*auth.Flow, *auth.DeviceAuthorization) {

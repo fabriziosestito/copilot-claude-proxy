@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 // Claude Code enables its 1M-context client path only when ANTHROPIC_MODEL

@@ -8,8 +8,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/auth"
-	"github.com/fabrizio/copilot-claude-proxy/internal/storage"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/auth"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/storage"
 )
 
 func newAuthCommand() *cli.Command {

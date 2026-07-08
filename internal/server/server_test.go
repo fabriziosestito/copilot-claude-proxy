@@ -12,8 +12,8 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
-	"github.com/fabrizio/copilot-claude-proxy/internal/server"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/server"
 )
 
 type staticFetcher struct {

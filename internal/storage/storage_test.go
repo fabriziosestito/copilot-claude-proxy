@@ -7,7 +7,7 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/storage"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/storage"
 )
 
 // fakeBackend is a mutex-guarded in-memory keyring with an injectable error.

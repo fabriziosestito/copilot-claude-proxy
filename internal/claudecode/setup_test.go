@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/claudecode"
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/claudecode"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 func model(id string, maxPromptTokens int) copilot.Model {
