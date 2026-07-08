@@ -8,7 +8,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/setup"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/setup"
 )
 
 func newSetupCommand() *cli.Command {

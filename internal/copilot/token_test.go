@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 // newTokenServer fakes the GitHub Copilot token endpoint, minting a new token

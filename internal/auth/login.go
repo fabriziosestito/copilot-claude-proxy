@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/storage"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/storage"
 )
 
 // Login runs the interactive GitHub device authorization and stores the

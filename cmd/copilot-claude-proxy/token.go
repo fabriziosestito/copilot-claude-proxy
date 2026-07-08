@@ -9,9 +9,9 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/auth"
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
-	"github.com/fabrizio/copilot-claude-proxy/internal/storage"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/auth"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/storage"
 )
 
 // githubToken returns the first available token: flag/env, the system

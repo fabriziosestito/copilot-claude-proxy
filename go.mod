@@ -1,4 +1,4 @@
-module github.com/fabrizio/copilot-claude-proxy
+module github.com/fabriziosestito/copilot-claude-proxy
 
 go 1.25
 

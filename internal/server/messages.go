@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 // maxRequestBodyBytes bounds incoming request bodies (1M-context prompts with

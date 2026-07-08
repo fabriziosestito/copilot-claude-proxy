@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 type staticFetcher struct {

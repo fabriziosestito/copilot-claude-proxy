@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fabrizio/copilot-claude-proxy/internal/claudecode"
-	"github.com/fabrizio/copilot-claude-proxy/internal/copilot"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/claudecode"
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
 var errNoAnthropicModels = errors.New(
