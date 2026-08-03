@@ -134,7 +134,8 @@ $ make build
 | `POST /v1/messages/count_tokens` | Local estimation (~4 chars/token, thinking blocks excluded)                                   |
 | `GET /v1/models`                 | Anthropic-format list of usable models                                                        |
 | `POST /api/event_logging`        | Swallows Anthropic SDK telemetry                                                              |
-| `GET /health`                    | Token/catalog health                                                                          |
+| `GET /health`                    | Token/catalog health (503 when degraded, for monitors)                                        |
+| `GET /status`                    | Session detail for the status line: tier, token TTL, last resolved model, counters (always 200) |
 
 ## Token storage
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/server"
@@ -433,9 +434,17 @@ func TestModelsListsAnthropicOnly(t *testing.T) {
 	}
 }
 
+// staticTokenHealth is a token that is either valid for an hour or absent.
 type staticTokenHealth bool
 
 func (h staticTokenHealth) TokenValid() bool { return bool(h) }
+
+func (h staticTokenHealth) TokenExpiry() time.Time {
+	if !h {
+		return time.Time{}
+	}
+	return time.Now().Add(time.Hour)
+}
 
 func TestHealthReflectsTokenAndCatalog(t *testing.T) {
 	t.Parallel()

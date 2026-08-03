@@ -29,6 +29,9 @@ type Session struct {
 	Tokens  *TokenManager
 	Client  *Client
 	Catalog *Catalog
+	// AccountType is the tier the endpoint was selected from, after resolving
+	// "auto" against the account.
+	AccountType AccountType
 }
 
 // Connect exchanges the GitHub token for a Copilot token and builds the
@@ -63,9 +66,10 @@ func Connect(ctx context.Context, cfg SessionConfig) (*Session, error) {
 	})
 
 	return &Session{
-		Tokens:  tokens,
-		Client:  client,
-		Catalog: NewCatalog(client, cfg.Logger, cfg.ModelMap),
+		Tokens:      tokens,
+		Client:      client,
+		Catalog:     NewCatalog(client, cfg.Logger, cfg.ModelMap),
+		AccountType: accountType,
 	}, nil
 }
 

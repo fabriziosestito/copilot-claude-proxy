@@ -120,6 +120,17 @@ func (m *TokenManager) TokenValid() bool {
 	return m.token != "" && time.Now().Before(m.expiresAt)
 }
 
+// TokenExpiry returns when the cached token expires, or the zero time when no
+// token has been fetched yet. Like TokenValid it never blocks on a refresh.
+func (m *TokenManager) TokenExpiry() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.token == "" {
+		return time.Time{}
+	}
+	return m.expiresAt
+}
+
 // cached returns the token when it is present and not about to expire.
 func (m *TokenManager) cached() (string, bool) {
 	m.mu.Lock()

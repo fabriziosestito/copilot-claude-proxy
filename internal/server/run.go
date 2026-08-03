@@ -49,10 +49,11 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	go session.Catalog.Run(ctx, copilot.ModelRefreshInterval)
 
 	proxy := New(Config{
-		Logger:  logger,
-		Copilot: session.Client,
-		Catalog: session.Catalog,
-		Tokens:  session.Tokens,
+		Logger:      logger,
+		Copilot:     session.Client,
+		Catalog:     session.Catalog,
+		Tokens:      session.Tokens,
+		AccountType: string(session.AccountType),
 	})
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
