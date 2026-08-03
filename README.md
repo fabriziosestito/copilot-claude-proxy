@@ -25,7 +25,14 @@ Generate the Claude Code configuration (interactive model selection):
 $ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest setup
 ```
 
-Run the proxy:
+Start the proxy and Claude Code together:
+
+```console
+$ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest run
+```
+
+`run` shuts the proxy down when Claude Code exits. To keep the proxy up across
+sessions, use `start` instead:
 
 ```console
 $ go run github.com/fabriziosestito/copilot-claude-proxy/cmd/copilot-claude-proxy@latest start
@@ -44,6 +51,7 @@ $ claude
 | `auth`   | GitHub device-flow login; opens the browser and stores the token in the OS keyring |
 | `logout` | Remove the stored token from the OS keyring                                        |
 | `start`  | Run the proxy server (default `127.0.0.1:4141`)                                    |
+| `run`    | Run the proxy and Claude Code together, stopping the proxy when Claude Code exits  |
 | `setup`  | Generate Claude Code configuration pointing at this proxy                          |
 | `models` | List the models available on your Copilot account                                  |
 
@@ -57,6 +65,34 @@ $ claude
 | `--github-token, -g` |             | Token override (also `GH_TOKEN` / `GITHUB_TOKEN` env)                                |
 | `--model-map`        |             | Extra aliases, repeatable: `--model-map haiku=claude-haiku-4.5`                      |
 | `--verbose, -v`      |             | Debug logging                                                                        |
+
+### `run` options
+
+`run` takes every `start` option, waits until the proxy accepts connections,
+then hands the terminal to `claude` with `ANTHROPIC_BASE_URL` and
+`ANTHROPIC_AUTH_TOKEN` set from the address it just bound (`--host`/`--port`).
+Claude Code's exit status becomes the exit status of `run`, and Ctrl-C goes to
+Claude Code rather than tearing the proxy down.
+
+Arguments after `--` are forwarded to Claude Code:
+
+```console
+$ copilot-claude-proxy run -- --resume
+```
+
+Because the proxy shares the terminal with Claude Code's UI, its log output is
+limited to errors. Use `--log-file/-l` to capture the full log instead:
+
+| Flag             | Default | Description                                                    |
+| ---------------- | ------- | -------------------------------------------------------------- |
+| `--log-file, -l` |         | Append proxy logs here (also `COPILOT_CLAUDE_PROXY_LOG_FILE`)  |
+| `--verbose, -v`  |         | Debug logging (pair with `--log-file` to keep the UI readable) |
+
+`run` still needs `setup` to have picked the models. Note that Claude Code
+applies the `env` block in `~/.claude/settings.json` over the environment it
+inherits, so once `setup` has run, its `ANTHROPIC_BASE_URL` is the one in
+effect. Running the proxy on a different port than `setup` recorded means
+re-running `setup`, not just passing `--port`.
 
 ### `setup` options
 

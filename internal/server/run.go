@@ -26,6 +26,9 @@ type RunConfig struct {
 	Session *copilot.Session
 	Host    string
 	Port    int
+	// Ready is optional; when set it is called once the listener is bound and
+	// the catalog is loaded, so callers can start clients without polling.
+	Ready func()
 }
 
 // Run serves the proxy until the context is canceled, keeping the Copilot
@@ -61,11 +64,22 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		// No WriteTimeout: SSE responses stream for minutes.
 	}
 
+	// Bind before serving so an address already in use is reported here
+	// instead of asynchronously, and so Ready means "connections accepted".
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+
 	logger.InfoContext(ctx, "proxy listening", "url", "http://"+addr)
 	logger.InfoContext(ctx, "configure claude code with: copilot-claude-proxy setup")
+	if cfg.Ready != nil {
+		cfg.Ready()
+	}
 
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpServer.ListenAndServe() }()
+	go func() { serveErr <- httpServer.Serve(listener) }()
 
 	select {
 	case serveFailure := <-serveErr:

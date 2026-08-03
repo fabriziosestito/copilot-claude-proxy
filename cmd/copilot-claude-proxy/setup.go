@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"net"
 	"os"
-	"strconv"
 
 	"github.com/urfave/cli/v3"
 
@@ -55,7 +53,7 @@ func runSetup(ctx context.Context, cmd *cli.Command) error {
 		return refreshErr
 	}
 
-	serverURL := "http://" + net.JoinHostPort(cmd.String("host"), strconv.Itoa(cmd.Int("port")))
+	serverURL := clientURL(cmd)
 	return setup.Run(setup.Config{
 		Catalog:     session.Catalog,
 		ServerURL:   serverURL,

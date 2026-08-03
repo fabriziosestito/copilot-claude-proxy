@@ -44,11 +44,21 @@ func githubToken(
 // session for the networked commands.
 func connect(ctx context.Context, cmd *cli.Command) (*copilot.Session, *slog.Logger, error) {
 	logger := newLogger(cmd.Bool("verbose"))
+	session, err := connectWith(ctx, cmd, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, logger, nil
+}
+
+// connectWith is connect with a caller-provided logger, for commands that
+// need the proxy's output somewhere other than the default stderr handler.
+func connectWith(ctx context.Context, cmd *cli.Command, logger *slog.Logger) (*copilot.Session, error) {
 	httpClient := &http.Client{}
 
 	token, err := githubToken(ctx, cmd, httpClient, logger)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	session, err := copilot.Connect(ctx, copilot.SessionConfig{
@@ -59,7 +69,7 @@ func connect(ctx context.Context, cmd *cli.Command) (*copilot.Session, *slog.Log
 		ModelMap:    cmd.StringMap("model-map"),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return session, logger, nil
+	return session, nil
 }
