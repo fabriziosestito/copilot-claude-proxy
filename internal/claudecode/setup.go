@@ -19,6 +19,9 @@ const (
 
 	onboardingKey = "hasCompletedOnboarding"
 	envKey        = "env"
+
+	// jsonNull is the literal text of an explicitly unset JSON value.
+	jsonNull = "null"
 )
 
 // SetupConfig describes a Claude Code setup run.
@@ -27,6 +30,9 @@ type SetupConfig struct {
 	Home string
 	// Env describes the desired environment block.
 	Env EnvConfig
+	// StatusLine is the command to install as the Claude Code status line.
+	// Empty leaves any existing status line untouched.
+	StatusLine string
 }
 
 // Setup is a planned configuration change, computed by PlanSetup and written
@@ -37,6 +43,9 @@ type Setup struct {
 	Env map[string]string
 	// Changes describes how Env differs from the current settings.
 	Changes ChangeSet
+	// StatusLine is the proposed status line change, nil when none was asked
+	// for.
+	StatusLine *StatusLinePlan
 	// OnboardingNeeded is true when ~/.claude.json lacks the onboarding flag.
 	OnboardingNeeded bool
 
@@ -65,6 +74,13 @@ func PlanSetup(cfg SetupConfig) (*Setup, error) {
 	}
 	proposedEnv := BuildEnv(cfg.Env, existingEnv)
 
+	var statusLinePlan *StatusLinePlan
+	if cfg.StatusLine != "" {
+		if statusLinePlan, err = planStatusLine(settings, cfg.StatusLine); err != nil {
+			return nil, fmt.Errorf("%s: %w", settingsPath, err)
+		}
+	}
+
 	var onboarded bool
 	if raw, ok := claudeJSON[onboardingKey]; ok {
 		_ = json.Unmarshal(raw, &onboarded)
@@ -73,6 +89,7 @@ func PlanSetup(cfg SetupConfig) (*Setup, error) {
 	return &Setup{
 		Env:              proposedEnv,
 		Changes:          DiffEnv(existingEnv, proposedEnv),
+		StatusLine:       statusLinePlan,
 		OnboardingNeeded: !onboarded,
 		settingsPath:     settingsPath,
 		claudeJSONPath:   claudeJSONPath,
@@ -81,7 +98,13 @@ func PlanSetup(cfg SetupConfig) (*Setup, error) {
 
 // NeedsWrite reports whether Apply would change anything on disk.
 func (s *Setup) NeedsWrite() bool {
-	return !s.Changes.Empty() || s.OnboardingNeeded
+	return !s.Changes.Empty() || !s.StatusLine.Empty() || s.OnboardingNeeded
+}
+
+// Destructive reports whether applying would overwrite or delete anything the
+// user already configured.
+func (s *Setup) Destructive() bool {
+	return s.Changes.Destructive() || s.StatusLine.Destructive()
 }
 
 // SettingsPath returns the settings.json location.
@@ -99,18 +122,9 @@ func (s *Setup) Apply() error {
 		return fmt.Errorf("create claude config directory: %w", err)
 	}
 
-	if !s.Changes.Empty() {
-		settings, err := readJSONObject(s.settingsPath)
-		if err != nil {
+	if !s.Changes.Empty() || !s.StatusLine.Empty() {
+		if err := s.writeSettings(); err != nil {
 			return err
-		}
-		envRaw, err := json.Marshal(s.Env)
-		if err != nil {
-			return fmt.Errorf("encode env block: %w", err)
-		}
-		settings[envKey] = envRaw
-		if writeErr := writeJSONObject(s.settingsPath, settings); writeErr != nil {
-			return writeErr
 		}
 	}
 
@@ -123,6 +137,28 @@ func (s *Setup) Apply() error {
 		return writeJSONObject(s.claudeJSONPath, claudeJSON)
 	}
 	return nil
+}
+
+// writeSettings merges the planned env and status line into settings.json.
+func (s *Setup) writeSettings() error {
+	settings, err := readJSONObject(s.settingsPath)
+	if err != nil {
+		return err
+	}
+
+	if !s.Changes.Empty() {
+		envRaw, marshalErr := json.Marshal(s.Env)
+		if marshalErr != nil {
+			return fmt.Errorf("encode env block: %w", marshalErr)
+		}
+		settings[envKey] = envRaw
+	}
+	if !s.StatusLine.Empty() {
+		if statusErr := applyStatusLine(settings, s.StatusLine.Command); statusErr != nil {
+			return statusErr
+		}
+	}
+	return writeJSONObject(s.settingsPath, settings)
 }
 
 // readJSONObject loads a JSON object file. A missing file yields an empty
@@ -195,7 +231,7 @@ func decodeEnv(raw json.RawMessage) (map[string]string, error) {
 			continue
 		}
 		literal := strings.TrimSpace(string(value))
-		if strings.HasPrefix(literal, "{") || strings.HasPrefix(literal, "[") || literal == "null" {
+		if strings.HasPrefix(literal, "{") || strings.HasPrefix(literal, "[") || literal == jsonNull {
 			return nil, fmt.Errorf("env value %q is not a string", key)
 		}
 		env[key] = literal

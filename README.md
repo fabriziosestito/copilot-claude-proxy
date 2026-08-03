@@ -101,6 +101,28 @@ neither). `--with-extras/-e` also writes opinionated tuning vars (telemetry off,
 auto-compact window, and `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, which fixes prompt
 caching through Copilot). `--yes/-y` skips the overwrite confirmation.
 
+`--with-statusline` adds a row to Claude Code's UI reporting what the proxy is
+doing, which Claude Code cannot otherwise know:
+
+```
+copilot business · claude-fable-5-1m · 137 req
+```
+
+Left to right: the Copilot account tier, the model the proxy last resolved
+upstream (Claude Code's own footer shows the name it asked for, which differs
+whenever an alias or the 1M-context suffix is rewritten), and the number of
+requests served this session. Trouble is colored red and appears inline:
+
+```
+copilot individual · claude-opus-5 · token expired · 137 req · 3 err (upstream 429)
+```
+
+The row is absent whenever the proxy is not reachable, so sessions not going
+through it look untouched. Setup writes the block into `~/.claude/settings.json`
+next to any `padding` or `refreshInterval` you have set, and asks before
+replacing a status line it did not write. The proxy address is baked in from
+`--host`/`--port`, so re-run `setup` after moving the proxy to another port.
+
 ## Known issues
 
 ### `claude-fable-5` occasionally switches to Chinese

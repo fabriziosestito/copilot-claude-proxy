@@ -32,6 +32,10 @@ func newSetupCommand() *cli.Command {
 				Usage:   "Also write opinionated tuning vars (telemetry off, auto-compact, caching fix)",
 			},
 			&cli.BoolFlag{
+				Name:  "with-statusline",
+				Usage: "Also add a status line row reporting the proxy tier, model, and errors",
+			},
+			&cli.BoolFlag{
 				Name:    "yes",
 				Aliases: []string{"y"},
 				Usage:   "Apply changes without asking for confirmation",
@@ -55,13 +59,14 @@ func runSetup(ctx context.Context, cmd *cli.Command) error {
 
 	serverURL := clientURL(cmd)
 	return setup.Run(setup.Config{
-		Catalog:     session.Catalog,
-		ServerURL:   serverURL,
-		Model:       cmd.String("model"),
-		SmallModel:  cmd.String("small-model"),
-		WithExtras:  cmd.Bool("with-extras"),
-		AutoApprove: cmd.Bool("yes"),
-		In:          os.Stdin,
-		Out:         os.Stdout,
+		Catalog:        session.Catalog,
+		ServerURL:      serverURL,
+		Model:          cmd.String("model"),
+		SmallModel:     cmd.String("small-model"),
+		WithExtras:     cmd.Bool("with-extras"),
+		WithStatusLine: cmd.Bool("with-statusline"),
+		AutoApprove:    cmd.Bool("yes"),
+		In:             os.Stdin,
+		Out:            os.Stdout,
 	})
 }

@@ -31,6 +31,9 @@ type Config struct {
 	SmallModel string
 	// WithExtras also writes opinionated tuning environment variables.
 	WithExtras bool
+	// WithStatusLine also installs the Claude Code status line reporting on
+	// this proxy.
+	WithStatusLine bool
 	// AutoApprove applies destructive changes without asking.
 	AutoApprove bool
 	// In and Out carry the interactive prompts.
@@ -61,6 +64,11 @@ func Run(cfg Config) error {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
 
+	var statusLine string
+	if cfg.WithStatusLine {
+		statusLine = claudecode.StatusLineCommand(cfg.ServerURL)
+	}
+
 	setup, err := claudecode.PlanSetup(claudecode.SetupConfig{
 		Home: home,
 		Env: claudecode.EnvConfig{
@@ -69,6 +77,7 @@ func Run(cfg Config) error {
 			SmallModel: smallModel,
 			WithExtras: cfg.WithExtras,
 		},
+		StatusLine: statusLine,
 	})
 	if err != nil {
 		return err
@@ -88,11 +97,17 @@ func applySetup(setup *claudecode.Setup, autoApprove bool, stdin *bufio.Reader, 
 	if !setup.Changes.Empty() {
 		fmt.Fprintf(out, "Changes to %s:\n%s\n", setup.SettingsPath(), setup.Changes.Format())
 	}
+	if !setup.StatusLine.Empty() {
+		if setup.Changes.Empty() {
+			fmt.Fprintf(out, "Changes to %s:\n", setup.SettingsPath())
+		}
+		fmt.Fprintln(out, setup.StatusLine.Format())
+	}
 	if setup.OnboardingNeeded {
 		fmt.Fprintf(out, "%s: set hasCompletedOnboarding = true\n", setup.ClaudeJSONPath())
 	}
 
-	if setup.Changes.Destructive() && !autoApprove {
+	if setup.Destructive() && !autoApprove {
 		approved, err := promptConfirm(stdin, out, "Apply these changes?")
 		if err != nil {
 			return err
