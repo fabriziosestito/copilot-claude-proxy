@@ -55,6 +55,7 @@ func rootCommand(signals *signalHandling) *cli.Command {
 			newRunCommand(signals),
 			newModelsCommand(),
 			newSetupCommand(),
+			newStatuslineCommand(),
 		},
 	}
 }
