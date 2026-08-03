@@ -69,10 +69,9 @@ $ claude
 ### `run` options
 
 `run` takes every `start` option, waits until the proxy accepts connections,
-then hands the terminal to `claude` with `ANTHROPIC_BASE_URL` and
-`ANTHROPIC_AUTH_TOKEN` set from the address it just bound (`--host`/`--port`).
-Claude Code's exit status becomes the exit status of `run`, and Ctrl-C goes to
-Claude Code rather than tearing the proxy down.
+then hands the terminal to `claude`. Claude Code's exit status becomes the exit
+status of `run`, and Ctrl-C goes to Claude Code rather than tearing the proxy
+down.
 
 Arguments after `--` are forwarded to Claude Code:
 
@@ -83,16 +82,38 @@ $ copilot-claude-proxy run -- --resume
 Because the proxy shares the terminal with Claude Code's UI, its log output is
 limited to errors. Use `--log-file/-l` to capture the full log instead:
 
-| Flag             | Default | Description                                                    |
-| ---------------- | ------- | -------------------------------------------------------------- |
-| `--log-file, -l` |         | Append proxy logs here (also `COPILOT_CLAUDE_PROXY_LOG_FILE`)  |
-| `--verbose, -v`  |         | Debug logging (pair with `--log-file` to keep the UI readable) |
+| Flag              | Default | Description                                                    |
+| ----------------- | ------- | -------------------------------------------------------------- |
+| `--log-file, -l`  |         | Append proxy logs here (also `COPILOT_CLAUDE_PROXY_LOG_FILE`)  |
+| `--no-statusline` |         | Leave the Claude Code status line alone                        |
+| `--verbose, -v`   |         | Debug logging (pair with `--log-file` to keep the UI readable) |
 
-`run` still needs `setup` to have picked the models. Note that Claude Code
-applies the `env` block in `~/.claude/settings.json` over the environment it
-inherits, so once `setup` has run, its `ANTHROPIC_BASE_URL` is the one in
-effect. Running the proxy on a different port than `setup` recorded means
-re-running `setup`, not just passing `--port`.
+#### How the session is pinned
+
+`run` passes its configuration as a JSON document on `claude --settings`, which
+Claude Code layers over `~/.claude/settings.json` and over the inherited
+environment. That is what makes `--host`/`--port` effective: the address the
+proxy actually bound to wins over whatever `setup` recorded, so running on
+another port needs no second `setup`.
+
+The document carries `ANTHROPIC_BASE_URL`, an `ANTHROPIC_AUTH_TOKEN` placeholder
+(the proxy does not authenticate its clients), and — unless `--no-statusline` —
+a status line row showing the tier, token TTL, and last resolved model. The
+model selection stays in `~/.claude/settings.json`, so `run` still needs `setup`
+to have picked the models.
+
+Variables that would override or bypass those settings are removed from Claude
+Code's environment, `ANTHROPIC_API_KEY` most importantly: Claude Code sends it
+as an `x-api-key` header even when the auth token comes from `--settings`, which
+would put a real Anthropic credential on every request to this proxy. The rest
+name a different endpoint or select another provider (`CLAUDE_CODE_USE_BEDROCK`
+and friends). Everything else you exported is passed through untouched.
+
+A `--settings` of your own after `--` is merged into this document rather than
+forwarded as a second flag, since Claude Code keeps only the last `--settings`
+on a command line and forwarding yours would silently drop the proxy
+connection. Your keys are kept except where they would route the session away
+from the proxy.
 
 ### `setup` options
 

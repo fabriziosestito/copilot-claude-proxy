@@ -94,3 +94,10 @@ func logFileFlag() *cli.StringFlag {
 		Sources: cli.EnvVars("COPILOT_CLAUDE_PROXY_LOG_FILE"),
 	}
 }
+
+func noStatusLineFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  "no-statusline",
+		Usage: "Do not add the proxy status line row to the Claude Code UI",
+	}
+}

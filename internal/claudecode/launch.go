@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 )
 
@@ -18,9 +19,9 @@ type LaunchConfig struct {
 	Path string
 	// Args are the arguments forwarded to Claude Code.
 	Args []string
-	// BaseURL, when non-empty, pins the proxy connection in the child
-	// environment so Claude Code talks to the instance that launched it.
-	BaseURL string
+	// Settings, when non-empty, is a JSON document passed as --settings that
+	// pins this session to the proxy that launched it.
+	Settings string
 }
 
 // Lookup resolves the Claude Code executable on PATH. Callers should do this
@@ -44,11 +45,16 @@ func Lookup() (string, error) {
 // child rather than killing it outright, giving Claude Code a chance to save
 // its session.
 func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
-	cmd := exec.CommandContext(ctx, cfg.Path, cfg.Args...) //nolint:gosec // the CLI is explicitly asked to run this.
+	args := cfg.Args
+	if cfg.Settings != "" {
+		args = append([]string{SettingsFlag, cfg.Settings}, cfg.Args...)
+	}
+
+	cmd := exec.CommandContext(ctx, cfg.Path, args...) //nolint:gosec // the CLI is explicitly asked to run this.
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = childEnv(cfg.BaseURL)
+	cmd.Env = childEnv()
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 
 	err := cmd.Run()
@@ -62,22 +68,40 @@ func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	return 0, nil
 }
 
-// childEnv returns the current environment with the proxy connection pinned:
-// the address of the proxy that launched Claude Code, and the placeholder token
-// the CLI refuses to start without. Both are set unconditionally and overwrite
-// what was inherited, since a value left over from another proxy would point
-// the session somewhere else. Everything else the user exported is preserved.
+// childEnv returns the current environment without the entries that would
+// override or bypass what --settings pins. Everything else the user exported is
+// preserved.
 //
-// Claude Code layers the env block in ~/.claude/settings.json over the
-// inherited environment, so these apply only where settings.json leaves them
-// unset. `setup` writes both, and when it has run its values are what Claude
-// Code uses.
-func childEnv(baseURL string) []string {
-	if baseURL == "" {
-		return nil
+// ANTHROPIC_API_KEY is the load-bearing one: Claude Code sends it as an
+// x-api-key header even when the auth token comes from --settings, putting a
+// real Anthropic credential on every request to this proxy. The rest either
+// name a different endpoint or select a different provider altogether, which
+// would route the session past the proxy entirely.
+func childEnv() []string {
+	blocked := map[string]struct{}{
+		"ANTHROPIC_API_KEY":                      {},
+		"ANTHROPIC_AUTH_TOKEN":                   {},
+		"ANTHROPIC_BASE_URL":                     {},
+		"ANTHROPIC_CUSTOM_HEADERS":               {},
+		"CLAUDE_CODE_API_BASE_URL":               {},
+		"CLAUDE_CODE_OAUTH_TOKEN":                {},
+		"CLAUDE_CODE_USE_ANTHROPIC_AWS":          {},
+		"CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD": {},
+		"CLAUDE_CODE_USE_BEDROCK":                {},
+		"CLAUDE_CODE_USE_FOUNDRY":                {},
+		"CLAUDE_CODE_USE_GATEWAY":                {},
+		"CLAUDE_CODE_USE_MANTLE":                 {},
+		"CLAUDE_CODE_USE_VERTEX":                 {},
 	}
-	return append(os.Environ(),
-		"ANTHROPIC_BASE_URL="+baseURL,
-		"ANTHROPIC_AUTH_TOKEN="+defaultAuthToken,
-	)
+
+	environ := os.Environ()
+	kept := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, found := blocked[name]; found {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept
 }

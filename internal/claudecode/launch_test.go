@@ -45,19 +45,15 @@ func script(t *testing.T, body string) string {
 	return path
 }
 
-func TestLaunchForwardsArgsAndPinsProxyEnv(t *testing.T) {
-	// Values left over from an earlier proxy, which the launch must replace.
-	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9999")
-	t.Setenv("ANTHROPIC_AUTH_TOKEN", "stale")
-
+func TestLaunchForwardsArgsAfterTheSettingsFlag(t *testing.T) {
+	t.Parallel()
 	output := filepath.Join(t.TempDir(), "out")
-	stub := script(t,
-		`printf '%s|%s|%s\n' "$*" "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN" > "`+output+`"`)
+	stub := script(t, `printf '%s\n' "$*" > "`+output+`"`)
 
 	status, err := claudecode.Launch(t.Context(), claudecode.LaunchConfig{
-		Path:    stub,
-		Args:    []string{"--resume", "hello world"},
-		BaseURL: "http://127.0.0.1:4242",
+		Path:     stub,
+		Args:     []string{"--resume", "hello world"},
+		Settings: `{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:4242"}}`,
 	})
 	if err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -70,8 +66,40 @@ func TestLaunchForwardsArgsAndPinsProxyEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stub output: %v", err)
 	}
-	want := "--resume hello world|http://127.0.0.1:4242|copilot-claude-proxy\n"
+	// The settings come first so a --settings the user passed cannot be
+	// separated from it by argument order.
+	want := `--settings {"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:4242"}} --resume hello world` + "\n"
 	if string(got) != want {
+		t.Errorf("stub recorded %q, want %q", got, want)
+	}
+}
+
+func TestLaunchDropsConflictingEnvironment(t *testing.T) {
+	// Exported by the user, and each one would override or bypass what the
+	// settings document pins.
+	t.Setenv("ANTHROPIC_API_KEY", "real-anthropic-key")
+	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9999")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "stale")
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+	t.Setenv("EDITOR", "vim")
+
+	output := filepath.Join(t.TempDir(), "out")
+	stub := script(t,
+		`printf '%s|%s|%s|%s|%s\n' "$ANTHROPIC_API_KEY" "$ANTHROPIC_BASE_URL" \
+			"$ANTHROPIC_AUTH_TOKEN" "$CLAUDE_CODE_USE_BEDROCK" "$EDITOR" > "`+output+`"`)
+
+	if _, err := claudecode.Launch(t.Context(), claudecode.LaunchConfig{
+		Path: stub, Settings: `{}`,
+	}); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+
+	got, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read stub output: %v", err)
+	}
+	// Unrelated variables are left alone.
+	if want := "||||vim\n"; string(got) != want {
 		t.Errorf("stub recorded %q, want %q", got, want)
 	}
 }

@@ -26,9 +26,8 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 		Usage:     "Start the proxy, run Claude Code against it, and stop the proxy on exit",
 		ArgsUsage: "[-- claude arguments...]",
 		Description: "Starts the proxy, waits until it accepts connections, then hands the\n" +
-			"terminal to Claude Code with ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN\n" +
-			"pointing at it. The proxy shuts down when Claude Code exits, and its exit\n" +
-			"status is propagated.\n\n" +
+			"terminal to Claude Code, pinned to the proxy with --settings. The proxy\n" +
+			"shuts down when Claude Code exits, and its exit status is propagated.\n\n" +
 			"Arguments after -- are forwarded to Claude Code:\n" +
 			"  copilot-claude-proxy run -- --resume",
 		Flags: []cli.Flag{
@@ -38,6 +37,7 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 			githubTokenFlag(),
 			modelMapFlag(),
 			logFileFlag(),
+			noStatusLineFlag(),
 			verboseFlag(),
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -49,6 +49,13 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) error {
 	// Resolved first so a missing CLI fails before authenticating or binding.
 	claudePath, err := claudecode.Lookup()
+	if err != nil {
+		return err
+	}
+
+	// Built before anything expensive so a malformed --settings is reported
+	// while there is still nothing to tear down.
+	forwarded, settings, err := claudeSettings(cmd)
 	if err != nil {
 		return err
 	}
@@ -95,9 +102,9 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 	defer restoreInterrupt()
 
 	status, launchErr := claudecode.Launch(ctx, claudecode.LaunchConfig{
-		Path:    claudePath,
-		Args:    cmd.Args().Slice(),
-		BaseURL: clientURL(cmd),
+		Path:     claudePath,
+		Args:     forwarded,
+		Settings: settings,
 	})
 
 	stopProxy()
@@ -112,6 +119,33 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 		return exitCodeError{status: status}
 	}
 	return nil
+}
+
+// claudeSettings splits a --settings the user passed after -- out of the
+// forwarded arguments and folds it into the document this command supplies.
+// Claude Code keeps only the last --settings on a command line, so forwarding
+// theirs alongside ours would silently discard the proxy connection.
+func claudeSettings(cmd *cli.Command) ([]string, string, error) {
+	forwarded, inherited, err := claudecode.SplitSettingsArg(cmd.Args().Slice())
+	if err != nil {
+		return nil, "", err
+	}
+
+	serverURL := clientURL(cmd)
+	var statusLine string
+	if !cmd.Bool("no-statusline") {
+		statusLine = claudecode.StatusLineCommand(serverURL)
+	}
+
+	settings, err := claudecode.BuildSettings(claudecode.SettingsConfig{
+		BaseURL:           serverURL,
+		StatusLineCommand: statusLine,
+		Inherited:         inherited,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return forwarded, settings, nil
 }
 
 // proxyLogger builds the logger for a proxy sharing a terminal with Claude
