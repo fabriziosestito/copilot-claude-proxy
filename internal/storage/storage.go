@@ -5,17 +5,27 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/zalando/go-keyring"
 )
 
 const (
-	keyringService = "copilot-claude-proxy"
-	keyringUser    = "github-token"
+	keyringService   = "copilot-claude-proxy"
+	keyringUser      = "github-token"
+	keyringAccounts  = "github-accounts"
+	accountKeyPrefix = "github-token:"
 )
+
+// Account is a stored GitHub identity and its OAuth token.
+type Account struct {
+	Name  string
+	Token string
+}
 
 // Backend is the keyring surface the store depends on; it matches the
 // zalando/go-keyring package functions and is swappable in tests.
@@ -77,6 +87,125 @@ func (s *TokenStore) Save(token string) error {
 				" (on systems without one, pass --github-token or set GH_TOKEN): %w", err)
 	}
 	return nil
+}
+
+// SaveAccount stores a token under a GitHub login and adds it to the account list.
+func (s *TokenStore) SaveAccount(name, token string) error {
+	name = normalizeAccountName(name)
+	if name == "" {
+		return errors.New("account name is required")
+	}
+	if err := s.backend.Set(keyringService, accountKeyPrefix+name, token); err != nil {
+		return fmt.Errorf("store token for account %q in the system keyring: %w", name, err)
+	}
+
+	names, err := s.accountNames()
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(names, name) {
+		names = append(names, name)
+		slices.Sort(names)
+	}
+	encoded, err := json.Marshal(names)
+	if err != nil {
+		return fmt.Errorf("encode account list: %w", err)
+	}
+	if err := s.backend.Set(keyringService, keyringAccounts, string(encoded)); err != nil {
+		return fmt.Errorf("store account list in the system keyring: %w", err)
+	}
+	return nil
+}
+
+// Accounts returns all named accounts. The legacy token is returned as
+// "default" only when no named accounts have been configured.
+func (s *TokenStore) Accounts() ([]Account, error) {
+	names, err := s.accountNames()
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		token, loadErr := s.Load()
+		if loadErr != nil || token == "" {
+			return nil, loadErr
+		}
+		return []Account{{Name: "default", Token: token}}, nil
+	}
+
+	accounts := make([]Account, 0, len(names))
+	for _, name := range names {
+		token, loadErr := s.loadAccount(name)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if token != "" {
+			accounts = append(accounts, Account{Name: name, Token: token})
+		}
+	}
+	return accounts, nil
+}
+
+// ClearAccount removes one named account from the keyring.
+func (s *TokenStore) ClearAccount(name string) (bool, error) {
+	name = normalizeAccountName(name)
+	names, err := s.accountNames()
+	if err != nil {
+		return false, err
+	}
+	if !slices.Contains(names, name) {
+		return false, nil
+	}
+	if err := s.backend.Delete(keyringService, accountKeyPrefix+name); err != nil &&
+		!errors.Is(err, keyring.ErrNotFound) {
+		return false, fmt.Errorf("remove token for account %q: %w", name, err)
+	}
+
+	names = slices.DeleteFunc(names, func(candidate string) bool { return candidate == name })
+	if len(names) == 0 {
+		if err := s.backend.Delete(keyringService, keyringAccounts); err != nil &&
+			!errors.Is(err, keyring.ErrNotFound) {
+			return false, fmt.Errorf("remove account list: %w", err)
+		}
+		return true, nil
+	}
+	encoded, err := json.Marshal(names)
+	if err != nil {
+		return false, fmt.Errorf("encode account list: %w", err)
+	}
+	if err := s.backend.Set(keyringService, keyringAccounts, string(encoded)); err != nil {
+		return false, fmt.Errorf("update account list: %w", err)
+	}
+	return true, nil
+}
+
+func (s *TokenStore) accountNames() ([]string, error) {
+	raw, err := s.backend.Get(keyringService, keyringAccounts)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read account list from the system keyring: %w", err)
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(raw), &names); err != nil {
+		return nil, fmt.Errorf("decode account list from the system keyring: %w", err)
+	}
+	return names, nil
+}
+
+func (s *TokenStore) loadAccount(name string) (string, error) {
+	secret, err := s.backend.Get(keyringService, accountKeyPrefix+name)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read token for account %q from the system keyring: %w", name, err)
+	}
+	return strings.TrimSpace(secret), nil
+}
+
+func normalizeAccountName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // Clear removes the stored token, reporting whether one was present.

@@ -42,9 +42,9 @@ func Login(
 	}
 	fmt.Fprintf(out, "Authenticated as %s.\n", login)
 
-	if saveErr := store.Save(token); saveErr != nil {
+	if saveErr := store.SaveAccount(login, token); saveErr != nil {
 		return "", saveErr
 	}
-	fmt.Fprintln(out, "Token saved to the system keyring.")
+	fmt.Fprintf(out, "Token saved to the system keyring as %s.\n", login)
 	return token, nil
 }

@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -22,6 +23,16 @@ type TokenHealth interface {
 	TokenValid() bool
 }
 
+// StatsProvider returns a snapshot of runtime account usage.
+type StatsProvider interface {
+	Usage() copilot.PoolUsage
+}
+
+// AccountSwitcher selects the account used for subsequent upstream requests.
+type AccountSwitcher interface {
+	SwitchAccount(name string) error
+}
+
 // Config carries the dependencies of a Server.
 type Config struct {
 	Logger  *slog.Logger
@@ -29,19 +40,28 @@ type Config struct {
 	Catalog *copilot.Catalog
 	// Tokens is optional; when set, /health reflects token validity.
 	Tokens TokenHealth
+	// Stats is optional; when set, /stats exposes account usage and failovers.
+	Stats StatsProvider
+	// Accounts is optional; when set, /accounts/switch enables manual switching.
+	Accounts AccountSwitcher
 }
 
 // Server handles the Anthropic-compatible routes.
 type Server struct {
-	logger  *slog.Logger
-	copilot CopilotCaller
-	catalog *copilot.Catalog
-	tokens  TokenHealth
+	logger   *slog.Logger
+	copilot  CopilotCaller
+	catalog  *copilot.Catalog
+	tokens   TokenHealth
+	stats    StatsProvider
+	accounts AccountSwitcher
 }
 
 // New builds a Server.
 func New(cfg Config) *Server {
-	return &Server{logger: cfg.Logger, copilot: cfg.Copilot, catalog: cfg.Catalog, tokens: cfg.Tokens}
+	return &Server{
+		logger: cfg.Logger, copilot: cfg.Copilot, catalog: cfg.Catalog,
+		tokens: cfg.Tokens, stats: cfg.Stats, accounts: cfg.Accounts,
+	}
 }
 
 // Handler returns the routed HTTP handler.
@@ -55,8 +75,43 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /anthropic/v1/models", s.handleModels)
 	mux.HandleFunc("POST /api/event_logging", s.handleEventLogging)
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /stats", s.handleStats)
+	mux.HandleFunc("GET /v1/stats", s.handleStats)
+	mux.HandleFunc("POST /accounts/switch", s.handleAccountSwitch)
 	mux.HandleFunc("GET /{$}", s.handleRoot)
 	return s.logRequests(trimTrailingSlash(mux))
+}
+
+type accountSwitchRequest struct {
+	Account string `json:"account"`
+}
+
+func (s *Server) handleAccountSwitch(w http.ResponseWriter, r *http.Request) {
+	if s.accounts == nil || s.stats == nil {
+		writeAnthropicError(w, http.StatusNotFound, errTypeInvalidRequest,
+			"runtime account switching is not enabled")
+		return
+	}
+	var request accountSwitchRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || strings.TrimSpace(request.Account) == "" {
+		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest,
+			"account is required")
+		return
+	}
+	if err := s.accounts.SwitchAccount(request.Account); err != nil {
+		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.stats.Usage())
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
+	if s.stats == nil {
+		writeAnthropicError(w, http.StatusNotFound, errTypeInvalidRequest,
+			"runtime statistics are not enabled")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.stats.Usage())
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {

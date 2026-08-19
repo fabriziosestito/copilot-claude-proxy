@@ -43,9 +43,38 @@ $ claude
 | -------- | ---------------------------------------------------------------------------------- |
 | `auth`   | GitHub device-flow login; opens the browser and stores the token in the OS keyring |
 | `logout` | Remove the stored token from the OS keyring                                        |
+| `accounts` | List authenticated GitHub accounts                                               |
 | `start`  | Run the proxy server (default `127.0.0.1:4141`)                                    |
+| `stats`  | Show runtime requests, rate limits, and account failovers                          |
 | `setup`  | Generate Claude Code configuration pointing at this proxy                          |
 | `models` | List the models available on your Copilot account                                  |
+
+### Multiple accounts
+
+Run `auth` once for each GitHub account. Tokens are stored separately under
+the authenticated GitHub login. `start` connects every stored account and, when
+Copilot returns HTTP 429 for a request, retries it once per remaining account.
+
+```console
+$ copilot-claude-proxy auth
+$ copilot-claude-proxy auth
+$ copilot-claude-proxy accounts
+$ copilot-claude-proxy start
+```
+
+While the proxy is running, `copilot-claude-proxy stats` shows upstream request,
+429, and failover counts for the current process. These are proxy runtime
+statistics, not GitHub billing or exact premium-request credit totals.
+
+`accounts` marks the account currently used for new requests with `*`. Switch it
+without restarting the proxy with:
+
+```console
+$ copilot-claude-proxy accounts switch <github-login>
+```
+
+The misspelled `accounts swith` is also accepted as an alias. Automatic 429
+failover remains enabled after a manual switch.
 
 ### `start` options
 

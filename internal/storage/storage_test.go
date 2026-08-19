@@ -159,3 +159,47 @@ func TestClear(t *testing.T) {
 		t.Errorf("Load after Clear = %q, want empty", token)
 	}
 }
+
+func TestNamedAccounts(t *testing.T) {
+	t.Parallel()
+	store := storage.NewTokenStoreWith(newFakeBackend())
+
+	if err := store.SaveAccount("Alice", "alice-token"); err != nil {
+		t.Fatalf("SaveAccount Alice: %v", err)
+	}
+	if err := store.SaveAccount("bob", "bob-token"); err != nil {
+		t.Fatalf("SaveAccount bob: %v", err)
+	}
+
+	accounts, err := store.Accounts()
+	if err != nil {
+		t.Fatalf("Accounts: %v", err)
+	}
+	if len(accounts) != 2 || accounts[0].Name != "alice" || accounts[0].Token != "alice-token" ||
+		accounts[1].Name != "bob" || accounts[1].Token != "bob-token" {
+		t.Fatalf("Accounts = %+v", accounts)
+	}
+
+	removed, err := store.ClearAccount("ALICE")
+	if err != nil || !removed {
+		t.Fatalf("ClearAccount Alice = %v, %v", removed, err)
+	}
+	accounts, err = store.Accounts()
+	if err != nil || len(accounts) != 1 || accounts[0].Name != "bob" {
+		t.Fatalf("Accounts after clear = %+v, %v", accounts, err)
+	}
+}
+
+func TestAccountsFallsBackToLegacyToken(t *testing.T) {
+	t.Parallel()
+	store := storage.NewTokenStoreWith(newFakeBackend())
+	if err := store.Save("legacy-token"); err != nil {
+		t.Fatal(err)
+	}
+
+	accounts, err := store.Accounts()
+	if err != nil || len(accounts) != 1 || accounts[0].Name != "default" ||
+		accounts[0].Token != "legacy-token" {
+		t.Fatalf("Accounts = %+v, %v", accounts, err)
+	}
+}

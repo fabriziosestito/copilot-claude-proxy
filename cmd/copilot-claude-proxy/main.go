@@ -39,7 +39,9 @@ func rootCommand() *cli.Command {
 		Commands: []*cli.Command{
 			newAuthCommand(),
 			newLogoutCommand(),
+			newAccountsCommand(),
 			newStartCommand(),
+			newStatsCommand(),
 			newModelsCommand(),
 			newSetupCommand(),
 		},
