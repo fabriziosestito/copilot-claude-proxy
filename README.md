@@ -54,7 +54,15 @@ $ claude
 
 Run `auth` once for each GitHub account. Tokens are stored separately under
 the authenticated GitHub login. `start` connects every stored account and, when
-Copilot returns HTTP 429 for a request, retries it once per remaining account.
+Copilot reports the account is spent, retries the request once per remaining
+account. Two upstream statuses trigger the failover:
+
+- `429 Too Many Requests` — the account hit a rate limit.
+- `402 Payment Required` — the account used up its monthly premium-request
+  quota (`You have exceeded your monthly quota`).
+
+If every account is exhausted, the last upstream response is returned
+unchanged.
 
 ```console
 $ copilot-claude-proxy auth
@@ -64,7 +72,7 @@ $ copilot-claude-proxy start
 ```
 
 While the proxy is running, `copilot-claude-proxy stats` shows upstream request,
-429, and failover counts for the current process. These are proxy runtime
+429, 402, and failover counts for the current process. These are proxy runtime
 statistics, not GitHub billing or exact premium-request credit totals.
 
 `accounts` marks the account currently used for new requests with `*`. Switch it

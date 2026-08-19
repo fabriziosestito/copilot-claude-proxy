@@ -32,9 +32,10 @@ func runStats(ctx context.Context, cmd *cli.Command) error {
 	fmt.Fprintf(os.Stdout, "Current account: %s\n", usage.Current)
 	fmt.Fprintf(os.Stdout, "Upstream requests: %d\n", usage.Requests)
 	fmt.Fprintf(os.Stdout, "Account failovers: %d\n\n", usage.Failovers)
-	fmt.Fprintln(os.Stdout, "ACCOUNT\tREQUESTS\tRATE LIMITED")
+	fmt.Fprintln(os.Stdout, "ACCOUNT\tREQUESTS\tRATE LIMITED\tQUOTA EXCEEDED")
 	for _, account := range usage.Accounts {
-		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\n", account.Name, account.Requests, account.RateLimited)
+		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%d\n",
+			account.Name, account.Requests, account.RateLimited, account.QuotaExceeded)
 	}
 	return nil
 }

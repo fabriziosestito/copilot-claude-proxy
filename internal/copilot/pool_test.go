@@ -54,6 +54,59 @@ func TestAccountPoolFailsOverOn429(t *testing.T) {
 	}
 }
 
+func TestAccountPoolFailsOverOnQuotaExceeded(t *testing.T) {
+	t.Parallel()
+	roundTripper := &poolRoundTripper{statuses: map[string][]int{
+		"first":  {http.StatusPaymentRequired},
+		"second": {http.StatusOK},
+	}}
+	pool, err := NewAccountPool([]AccountSession{
+		{Name: "alice", Session: poolTestSession(roundTripper, "first")},
+		{Name: "bob", Session: poolTestSession(roundTripper, "second")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := pool.Do(t.Context(), CallOptions{Method: http.MethodPost, Path: "/v1/messages"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	usage := pool.Usage()
+	if usage.Current != "bob" || usage.Failovers != 1 ||
+		usage.Accounts[0].QuotaExceeded != 1 || usage.Accounts[0].RateLimited != 0 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+func TestAccountPoolReturnsLastExhaustionResponse(t *testing.T) {
+	t.Parallel()
+	roundTripper := &poolRoundTripper{statuses: map[string][]int{
+		"first":  {http.StatusTooManyRequests},
+		"second": {http.StatusPaymentRequired},
+	}}
+	pool, err := NewAccountPool([]AccountSession{
+		{Name: "alice", Session: poolTestSession(roundTripper, "first")},
+		{Name: "bob", Session: poolTestSession(roundTripper, "second")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := pool.Do(t.Context(), CallOptions{Method: http.MethodPost, Path: "/v1/messages"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, want 402", resp.StatusCode)
+	}
+}
+
 func TestAccountPoolSwitchAccount(t *testing.T) {
 	t.Parallel()
 	roundTripper := &poolRoundTripper{statuses: map[string][]int{
