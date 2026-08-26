@@ -98,7 +98,7 @@ another port needs no second `setup`.
 
 The document carries `ANTHROPIC_BASE_URL`, an `ANTHROPIC_AUTH_TOKEN` placeholder
 (the proxy does not authenticate its clients), and — unless `--no-statusline` —
-a status line row showing the tier, token TTL, and last resolved model. The
+a status line row showing the tier, token-expiry warnings, and last resolved model. The
 model selection stays in `~/.claude/settings.json`, so `run` still needs `setup`
 to have picked the models.
 

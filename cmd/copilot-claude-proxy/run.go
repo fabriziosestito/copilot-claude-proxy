@@ -47,6 +47,14 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 }
 
 func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) error {
+	// run pins Claude Code to the proxy URL before the listener binds, so a
+	// port outside the dialable range would leave the client unable to reach
+	// it. Ephemeral (0) is rejected rather than plumbing the bound address back
+	// through readiness; anything past 65535 never binds at all.
+	if port := cmd.Int("port"); port < 1 || port > 65535 {
+		return fmt.Errorf("run requires a fixed --port in 1-65535, got %d", port)
+	}
+
 	// Resolved first so a missing CLI fails before authenticating or binding.
 	claudePath, err := claudecode.Lookup()
 	if err != nil {

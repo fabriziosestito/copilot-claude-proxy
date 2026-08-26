@@ -105,12 +105,22 @@ func inheritedSettings(value string) (map[string]json.RawMessage, error) {
 // overlayEnv sets the proxy connection in the document's env block, keeping
 // every other entry the user put there. Values are written as raw JSON so an
 // inherited block survives verbatim.
+//
+// Keys in [blockedEnvKeys] are dropped: an inherited env block is a second way
+// to smuggle a real credential or a rival endpoint into the session, so the
+// same scrub [childEnv] applies to the process environment applies here. Note
+// this only masks the inherited --settings document; env values coming from
+// the lower-priority ~/.claude/settings.json cannot be unset from an overlay,
+// since Claude Code merges those key by key.
 func overlayEnv(document map[string]json.RawMessage, baseURL string) error {
 	env := map[string]json.RawMessage{}
 	if raw, present := document[envKey]; present && string(raw) != jsonNull {
 		if err := json.Unmarshal(raw, &env); err != nil {
 			return fmt.Errorf("%s block is not an object: %w", envKey, err)
 		}
+	}
+	for key := range blockedEnvKeys() {
+		delete(env, key)
 	}
 
 	for key, value := range map[string]string{

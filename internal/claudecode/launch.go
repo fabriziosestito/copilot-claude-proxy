@@ -8,10 +8,20 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // BinaryName is the Claude Code executable looked up on PATH.
 const BinaryName = "claude"
+
+// terminationGrace bounds how long a child may take to exit after SIGTERM
+// before the runtime kills it, so a hung or unresponsive Claude Code cannot
+// block shutdown forever.
+const terminationGrace = 5 * time.Second
+
+// signalExitBase is the shell convention for reporting a signal-terminated
+// child: its exit code is 128 plus the terminating signal number.
+const signalExitBase = 128
 
 // LaunchConfig describes a Claude Code invocation.
 type LaunchConfig struct {
@@ -56,11 +66,14 @@ func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Env = childEnv()
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	// After Cancel's SIGTERM, kill the child if it has not exited in time so a
+	// hung Claude Code cannot block cancellation indefinitely.
+	cmd.WaitDelay = terminationGrace
 
 	err := cmd.Run()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), nil
+		return exitStatus(exitErr), nil
 	}
 	if err != nil {
 		return 0, fmt.Errorf("run %s: %w", BinaryName, err)
@@ -68,17 +81,27 @@ func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	return 0, nil
 }
 
-// childEnv returns the current environment without the entries that would
-// override or bypass what --settings pins. Everything else the user exported is
-// preserved.
+// exitStatus turns a child's exit into a shell-conventional code. A process
+// killed by a signal has an ExitCode of -1; report it as 128+signal (e.g. 130
+// for SIGINT) the way a shell would, instead of letting -1 become 255.
+func exitStatus(exitErr *exec.ExitError) int {
+	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return signalExitBase + int(status.Signal())
+	}
+	return exitErr.ExitCode()
+}
+
+// blockedEnvKeys are the environment entries that would override or bypass what
+// --settings pins. They are scrubbed from both the child process environment
+// ([childEnv]) and the inherited --settings env block ([overlayEnv]).
 //
 // ANTHROPIC_API_KEY is the load-bearing one: Claude Code sends it as an
 // x-api-key header even when the auth token comes from --settings, putting a
 // real Anthropic credential on every request to this proxy. The rest either
 // name a different endpoint or select a different provider altogether, which
 // would route the session past the proxy entirely.
-func childEnv() []string {
-	blocked := map[string]struct{}{
+func blockedEnvKeys() map[string]struct{} {
+	return map[string]struct{}{
 		"ANTHROPIC_API_KEY":                      {},
 		"ANTHROPIC_AUTH_TOKEN":                   {},
 		"ANTHROPIC_BASE_URL":                     {},
@@ -93,7 +116,13 @@ func childEnv() []string {
 		"CLAUDE_CODE_USE_MANTLE":                 {},
 		"CLAUDE_CODE_USE_VERTEX":                 {},
 	}
+}
 
+// childEnv returns the current environment without the entries that would
+// override or bypass what --settings pins. Everything else the user exported is
+// preserved.
+func childEnv() []string {
+	blocked := blockedEnvKeys()
 	environ := os.Environ()
 	kept := make([]string, 0, len(environ))
 	for _, entry := range environ {

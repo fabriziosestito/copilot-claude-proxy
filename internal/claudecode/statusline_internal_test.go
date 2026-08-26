@@ -2,7 +2,6 @@ package claudecode
 
 import (
 	"errors"
-	"path/filepath"
 	"testing"
 )
 
@@ -15,30 +14,21 @@ func TestStatusLineBinaryPrefersADurableInstallPath(t *testing.T) {
 	}
 }
 
-func TestStatusLineBinaryFallsBackToPath(t *testing.T) {
+func TestStatusLineBinaryUsesResolvedPathForTemporaryBuilds(t *testing.T) {
 	t.Parallel()
-	tests := map[string]struct {
-		path      string
-		err       error
-		inTempDir bool
-	}{
-		"lookup failed": {err: errors.New("no executable")},
-		"go run build cache": {
-			path: "/Users/x/Library/Caches/go-build/ab/cd-d/exe/copilot-claude-proxy",
-		},
-		"temp directory": {inTempDir: true},
+	// A `go run` build output stays in place for the session, so it is used
+	// verbatim rather than replaced with the bare, not-on-PATH name.
+	build := "/Users/x/Library/Caches/go-build/ab/cd-d/exe/copilot-claude-proxy"
+
+	if got := statusLineBinary(func() (string, error) { return build, nil }); got != build {
+		t.Errorf("statusLineBinary = %q, want the build path %q", got, build)
 	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			path := test.path
-			if test.inTempDir {
-				path = filepath.Join(t.TempDir(), proxyBinaryName)
-			}
-			got := statusLineBinary(func() (string, error) { return path, test.err })
-			if got != proxyBinaryName {
-				t.Errorf("statusLineBinary = %q, want the %q fallback", got, proxyBinaryName)
-			}
-		})
+}
+
+func TestStatusLineBinaryFallsBackWhenLookupFails(t *testing.T) {
+	t.Parallel()
+	got := statusLineBinary(func() (string, error) { return "", errors.New("no executable") })
+	if got != proxyBinaryName {
+		t.Errorf("statusLineBinary = %q, want the %q fallback", got, proxyBinaryName)
 	}
 }

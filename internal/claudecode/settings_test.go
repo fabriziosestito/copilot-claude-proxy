@@ -117,6 +117,36 @@ func TestBuildSettingsMergesAnInheritedDocument(t *testing.T) {
 	}
 }
 
+func TestBuildSettingsStripsBlockedInheritedEnv(t *testing.T) {
+	t.Parallel()
+	// An inherited env block is a second path to smuggle a real credential or a
+	// rival provider selector past the process-env scrub; both must be dropped.
+	inherited := `{"env": {
+		"ANTHROPIC_API_KEY": "real-key",
+		"CLAUDE_CODE_USE_BEDROCK": "1",
+		"ANTHROPIC_MODEL": "theirs"
+	}}`
+
+	document, err := claudecode.BuildSettings(claudecode.SettingsConfig{
+		BaseURL:   proxyURL,
+		Inherited: inherited,
+	})
+	if err != nil {
+		t.Fatalf("BuildSettings: %v", err)
+	}
+
+	env := settingsEnv(t, document)
+	if _, present := env["ANTHROPIC_API_KEY"]; present {
+		t.Errorf("ANTHROPIC_API_KEY survived the overlay: %v", env["ANTHROPIC_API_KEY"])
+	}
+	if _, present := env["CLAUDE_CODE_USE_BEDROCK"]; present {
+		t.Errorf("CLAUDE_CODE_USE_BEDROCK survived the overlay: %v", env["CLAUDE_CODE_USE_BEDROCK"])
+	}
+	if env["ANTHROPIC_MODEL"] != "theirs" {
+		t.Errorf("unrelated env entry was lost: %v", env["ANTHROPIC_MODEL"])
+	}
+}
+
 func TestBuildSettingsKeepsAnInheritedStatusLineWhenDisabled(t *testing.T) {
 	t.Parallel()
 	document, err := claudecode.BuildSettings(claudecode.SettingsConfig{
