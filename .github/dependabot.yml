@@ -12,6 +12,11 @@ updates:
       go-dependencies:
         patterns:
           - "*"
+        # Keep majors out of the group so they arrive as individual PRs
+        # for manual review, and the grouped PR can always auto-merge.
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
@@ -23,3 +28,6 @@ updates:
       github-actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
