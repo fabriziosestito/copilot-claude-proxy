@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait for new releases to age before updating, to avoid pulling in
+    # freshly published (potentially compromised) versions.
+    cooldown:
+      default-days: 7
     groups:
       go-dependencies:
         patterns:
@@ -13,6 +17,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
