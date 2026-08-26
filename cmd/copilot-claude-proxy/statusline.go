@@ -11,8 +11,8 @@ import (
 )
 
 // newStatuslineCommand builds the entry point Claude Code invokes for its
-// status line. It is hidden because nobody runs it by hand: `setup` wires it
-// into settings.json and Claude Code calls it with a JSON payload on stdin.
+// status line. It is hidden because nobody runs it by hand: `run` injects it
+// into the session settings and Claude Code calls it with a JSON payload on stdin.
 func newStatuslineCommand() *cli.Command {
 	return &cli.Command{
 		Name:   "statusline",
