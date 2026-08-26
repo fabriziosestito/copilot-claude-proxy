@@ -14,8 +14,7 @@ and passes your requests along.
 ### Homebrew (macOS and Linux)
 
 ```console
-$ brew tap fabriziosestito/copilot-claude-proxy https://github.com/fabriziosestito/copilot-claude-proxy
-$ brew install copilot-claude-proxy
+$ brew install fabriziosestito/tap/copilot-claude-proxy
 ```
 
 ### Pre-built binaries
