@@ -34,14 +34,17 @@ checksum:
 
 brews:
   - name: copilot-claude-proxy
-    directory: HomebrewFormula
+    directory: Formula
     homepage: "https://github.com/fabriziosestito/copilot-claude-proxy"
     description: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code"
     license: "GPL-3.0"
     commit_msg_template: "chore: update brew formula for {{ .Tag }}"
     repository:
       owner: fabriziosestito
-      name: copilot-claude-proxy
+      name: homebrew-tap
+      # GITHUB_TOKEN cannot push to other repositories; this is a
+      # fine-grained PAT with contents write access to homebrew-tap only.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     test: |
       system "#{bin}/copilot-claude-proxy --version"
 
