@@ -11,6 +11,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// version is set at build time via ldflags (see .goreleaser.yaml).
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
@@ -43,8 +46,9 @@ func run() int {
 
 func rootCommand(signals *signalHandling) *cli.Command {
 	return &cli.Command{
-		Name:  "copilot-claude-proxy",
-		Usage: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
+		Name:    "copilot-claude-proxy",
+		Usage:   "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
+		Version: version,
 		// The default handler calls os.Exit on ExitCoder errors, skipping the
 		// deferred cleanup in run; every exit path goes through run instead.
 		ExitErrHandler: func(context.Context, *cli.Command, error) {},
