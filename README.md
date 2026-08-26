@@ -9,9 +9,28 @@ works as usual. Copilot understands the same API that Claude Code speaks, so
 the proxy doesn't need to translate anything: it just logs you into GitHub
 and passes your requests along.
 
+## Installation
+
+### Homebrew (macOS and Linux)
+
+```console
+$ brew tap fabriziosestito/copilot-claude-proxy https://github.com/fabriziosestito/copilot-claude-proxy
+$ brew install copilot-claude-proxy
+```
+
+### Pre-built binaries
+
+Download the archive for your OS/architecture (including Windows) from the
+[GitHub Releases page](https://github.com/fabriziosestito/copilot-claude-proxy/releases).
+
+### `go run`
+
+No installation needed; requires Go 1.25 or newer. Used throughout this README.
+
 ## Quick start
 
-Run it with `go run` (Go 1.25 or newer).
+Run it with `go run` (Go 1.25 or newer), or use the `copilot-claude-proxy`
+pre-built binary.
 
 Authenticate with GitHub (device flow; opens your browser automatically):
 

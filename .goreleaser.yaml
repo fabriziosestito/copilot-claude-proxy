@@ -32,6 +32,19 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: copilot-claude-proxy
+    directory: HomebrewFormula
+    homepage: "https://github.com/fabriziosestito/copilot-claude-proxy"
+    description: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code"
+    license: "GPL-3.0"
+    commit_msg_template: "chore: update brew formula for {{ .Tag }}"
+    repository:
+      owner: fabriziosestito
+      name: copilot-claude-proxy
+    test: |
+      system "#{bin}/copilot-claude-proxy --version"
+
 changelog:
   sort: asc
   filters:
