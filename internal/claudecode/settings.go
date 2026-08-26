@@ -96,6 +96,9 @@ func inheritedSettings(value string) (map[string]json.RawMessage, error) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		return nil, fmt.Errorf("%s is not a JSON object: %w", SettingsFlag, err)
 	}
+	if document == nil {
+		return nil, fmt.Errorf("%s is not a JSON object", SettingsFlag)
+	}
 	return document, nil
 }
 
