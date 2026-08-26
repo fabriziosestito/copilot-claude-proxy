@@ -13,6 +13,9 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// version is set at build time via ldflags (see .goreleaser.yaml).
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
@@ -34,8 +37,9 @@ func run() int {
 
 func rootCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "copilot-claude-proxy",
-		Usage: "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
+		Name:    "copilot-claude-proxy",
+		Usage:   "Expose GitHub Copilot as an Anthropic-compatible API for Claude Code",
+		Version: version,
 		Commands: []*cli.Command{
 			newAuthCommand(),
 			newLogoutCommand(),
