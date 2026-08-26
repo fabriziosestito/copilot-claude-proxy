@@ -3,7 +3,7 @@ module github.com/fabriziosestito/copilot-claude-proxy
 go 1.25
 
 require (
-	github.com/urfave/cli/v3 v3.10.1
+	github.com/urfave/cli/v3 v3.11.0
 	github.com/zalando/go-keyring v0.2.8
 )
 
