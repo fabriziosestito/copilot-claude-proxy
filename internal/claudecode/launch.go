@@ -14,9 +14,9 @@ import (
 // BinaryName is the Claude Code executable looked up on PATH.
 const BinaryName = "claude"
 
-// terminationGrace bounds how long a child may take to exit after SIGTERM
-// before the runtime kills it, so a hung or unresponsive Claude Code cannot
-// block shutdown forever.
+// terminationGrace bounds how long a child may take to exit after being told
+// to ([terminate]) before the runtime kills it, so a hung or unresponsive
+// Claude Code cannot block shutdown forever.
 const terminationGrace = 5 * time.Second
 
 // signalExitBase is the shell convention for reporting a signal-terminated
@@ -53,9 +53,9 @@ func Lookup() (string, error) {
 //
 // The child shares this process's terminal and process group, so the terminal
 // delivers Ctrl-C to it directly; callers must stop treating SIGINT as their
-// own shutdown signal for the duration. Canceling ctx sends SIGTERM to the
-// child rather than killing it outright, giving Claude Code a chance to save
-// its session.
+// own shutdown signal for the duration. Canceling ctx ends the child via
+// [terminate] — SIGTERM where the platform has it — giving Claude Code a
+// chance to save its session.
 func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	args := cfg.Args
 	if cfg.Settings != "" {
@@ -67,9 +67,9 @@ func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = childEnv()
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	// After Cancel's SIGTERM, kill the child if it has not exited in time so a
-	// hung Claude Code cannot block cancellation indefinitely.
+	cmd.Cancel = func() error { return terminate(cmd.Process) }
+	// After Cancel's termination request, kill the child if it has not exited
+	// in time so a hung Claude Code cannot block cancellation indefinitely.
 	cmd.WaitDelay = terminationGrace
 
 	err := cmd.Run()
