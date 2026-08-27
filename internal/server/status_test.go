@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
@@ -129,6 +130,41 @@ func TestStatusCountsUpstreamFailures(t *testing.T) {
 			t.Errorf("last_error = %v, want upstream unreachable", status["last_error"])
 		}
 	})
+
+	t.Run("mid-stream abort", func(t *testing.T) {
+		t.Parallel()
+		// The upstream answers 200 and starts streaming, then the body dies
+		// with a non-EOF error; the failure must still reach the counters.
+		handler := newStatusHandler(t, &streamCaller{
+			body: io.MultiReader(
+				strings.NewReader("event: message_start\ndata: {}\n\n"),
+				iotest.ErrReader(errors.New("connection reset")),
+			),
+		})
+		postJSON(handler, "/v1/messages", body)
+
+		status := getStatus(t, handler)
+		if status["errors"] != float64(1) {
+			t.Errorf("errors = %v, want 1", status["errors"])
+		}
+		if status["last_error"] != "stream aborted" {
+			t.Errorf("last_error = %v, want stream aborted", status["last_error"])
+		}
+	})
+}
+
+// streamCaller answers with a 200 SSE response wrapping the given body, so a
+// test can fail the stream partway through the relay.
+type streamCaller struct {
+	body io.Reader
+}
+
+func (c *streamCaller) Do(_ context.Context, _ copilot.CallOptions) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(c.body),
+	}, nil
 }
 
 func TestStatusStaysAvailableWhenDegraded(t *testing.T) {

@@ -70,6 +70,7 @@ func (s *Server) relayEvents(
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
+				s.activity.fail("stream aborted")
 				s.logger.WarnContext(ctx, "upstream stream aborted", "error", err)
 				writeStreamError(w, atEventBoundary, "upstream stream aborted unexpectedly")
 			}
