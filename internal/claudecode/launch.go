@@ -120,14 +120,16 @@ func blockedEnvKeys() map[string]struct{} {
 
 // childEnv returns the current environment without the entries that would
 // override or bypass what --settings pins. Everything else the user exported is
-// preserved.
+// preserved. Names are compared case-insensitively: Windows treats
+// anthropic_api_key and ANTHROPIC_API_KEY as the same variable, and on Unix a
+// lowercase spelling is inert anyway.
 func childEnv() []string {
 	blocked := blockedEnvKeys()
 	environ := os.Environ()
 	kept := make([]string, 0, len(environ))
 	for _, entry := range environ {
 		name, _, _ := strings.Cut(entry, "=")
-		if _, found := blocked[name]; found {
+		if _, found := blocked[strings.ToUpper(name)]; found {
 			continue
 		}
 		kept = append(kept, entry)

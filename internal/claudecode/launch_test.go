@@ -81,12 +81,15 @@ func TestLaunchDropsConflictingEnvironment(t *testing.T) {
 	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9999")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "stale")
 	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+	// A distinct variable on Unix, but the same one on Windows; the scrub
+	// drops it on both.
+	t.Setenv("anthropic_api_key", "lowercase-key")
 	t.Setenv("EDITOR", "vim")
 
 	output := filepath.Join(t.TempDir(), "out")
 	stub := script(t,
-		`printf '%s|%s|%s|%s|%s\n' "$ANTHROPIC_API_KEY" "$ANTHROPIC_BASE_URL" \
-			"$ANTHROPIC_AUTH_TOKEN" "$CLAUDE_CODE_USE_BEDROCK" "$EDITOR" > "`+output+`"`)
+		`printf '%s|%s|%s|%s|%s|%s\n' "$ANTHROPIC_API_KEY" "$ANTHROPIC_BASE_URL" \
+			"$ANTHROPIC_AUTH_TOKEN" "$CLAUDE_CODE_USE_BEDROCK" "$anthropic_api_key" "$EDITOR" > "`+output+`"`)
 
 	if _, err := claudecode.Launch(t.Context(), claudecode.LaunchConfig{
 		Path: stub, Settings: `{}`,
@@ -99,7 +102,7 @@ func TestLaunchDropsConflictingEnvironment(t *testing.T) {
 		t.Fatalf("read stub output: %v", err)
 	}
 	// Unrelated variables are left alone.
-	if want := "||||vim\n"; string(got) != want {
+	if want := "|||||vim\n"; string(got) != want {
 		t.Errorf("stub recorded %q, want %q", got, want)
 	}
 }

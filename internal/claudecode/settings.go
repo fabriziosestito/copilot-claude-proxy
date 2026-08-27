@@ -119,8 +119,13 @@ func overlayEnv(document map[string]json.RawMessage, baseURL string) error {
 			return fmt.Errorf("%s block is not an object: %w", envKey, err)
 		}
 	}
-	for key := range blockedEnvKeys() {
-		delete(env, key)
+	blocked := blockedEnvKeys()
+	for key := range env {
+		// Compared case-insensitively: Windows resolves anthropic_api_key and
+		// ANTHROPIC_API_KEY to the same environment variable.
+		if _, found := blocked[strings.ToUpper(key)]; found {
+			delete(env, key)
+		}
 	}
 
 	for key, value := range map[string]string{
