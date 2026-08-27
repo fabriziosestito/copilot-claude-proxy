@@ -109,22 +109,66 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 	restoreInterrupt := signals.DetachInterrupt()
 	defer restoreInterrupt()
 
-	status, launchErr := claudecode.Launch(ctx, claudecode.LaunchConfig{
+	return superviseSession(ctx, claudecode.LaunchConfig{
 		Path:     claudePath,
 		Args:     forwarded,
 		Settings: settings,
-	})
+	}, stopProxy, proxyDone)
+}
 
-	stopProxy()
-	proxyErr := <-proxyDone
+// launchResult carries Claude Code's exit outcome across the supervising select.
+type launchResult struct {
+	status int
+	err    error
+}
+
+// superviseSession runs Claude Code concurrently with the proxy and returns
+// once both have stopped. Watching the proxy while the session runs matters:
+// a server that dies mid-session would otherwise leave Claude Code talking to
+// a dead port until the user gives up and exits it by hand.
+func superviseSession(
+	ctx context.Context,
+	cfg claudecode.LaunchConfig,
+	stopProxy func(),
+	proxyDone <-chan error,
+) error {
+	launchCtx, stopLaunch := context.WithCancel(ctx)
+	defer stopLaunch()
+
+	launchDone := make(chan launchResult, 1)
+	go func() {
+		status, err := claudecode.Launch(launchCtx, cfg)
+		launchDone <- launchResult{status: status, err: err}
+	}()
+
+	var result launchResult
+	var proxyErr error
+	select {
+	case result = <-launchDone:
+		stopProxy()
+		proxyErr = <-proxyDone
+	case proxyErr = <-proxyDone:
+		stopLaunch()
+		result = <-launchDone
+		// A proxy that stopped on its own took the live session down with it,
+		// so its failure is the outcome to report, not the child's terminated
+		// status. When ctx canceled both (Ctrl-C or SIGTERM on this process),
+		// the child's own exit is the one that matters.
+		if ctx.Err() == nil {
+			if proxyErr == nil {
+				proxyErr = errProxyStopped
+			}
+			return proxyErr
+		}
+	}
 
 	switch {
-	case launchErr != nil:
-		return launchErr
+	case result.err != nil:
+		return result.err
 	case proxyErr != nil:
 		return proxyErr
-	case status != 0:
-		return exitCodeError{status: status}
+	case result.status != 0:
+		return exitCodeError{status: result.status}
 	}
 	return nil
 }
