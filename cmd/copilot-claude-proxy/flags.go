@@ -1,10 +1,13 @@
 package main
 
 import (
+	"io"
 	"log/slog"
 	"os"
 
 	"github.com/urfave/cli/v3"
+
+	"github.com/fabriziosestito/copilot-claude-proxy/internal/claudecode"
 )
 
 const (
@@ -17,7 +20,16 @@ func newLogger(verbose bool) *slog.Logger {
 	if verbose {
 		level = slog.LevelDebug
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	return newLoggerAt(os.Stderr, level)
+}
+
+func newLoggerAt(out io.Writer, level slog.Level) *slog.Logger {
+	return slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: level}))
+}
+
+// clientURL is the base URL Claude Code should call this proxy at.
+func clientURL(cmd *cli.Command) string {
+	return claudecode.ClientURL(cmd.String("host"), cmd.Int("port"))
 }
 
 func verboseFlag() *cli.BoolFlag {
@@ -71,5 +83,21 @@ func modelMapFlag() *cli.StringMapFlag {
 	return &cli.StringMapFlag{
 		Name:  "model-map",
 		Usage: "Extra model aliases as alias=model-id (e.g. haiku=claude-haiku-4.5); repeatable",
+	}
+}
+
+func logFileFlag() *cli.StringFlag {
+	return &cli.StringFlag{
+		Name:    "log-file",
+		Aliases: []string{"l"},
+		Usage:   "Append proxy logs to this file instead of sharing the terminal with Claude Code",
+		Sources: cli.EnvVars("COPILOT_CLAUDE_PROXY_LOG_FILE"),
+	}
+}
+
+func noStatusLineFlag() *cli.BoolFlag {
+	return &cli.BoolFlag{
+		Name:  "no-statusline",
+		Usage: "Do not add the proxy status line row to the Claude Code UI",
 	}
 }

@@ -4,11 +4,34 @@
 package claudecode
 
 import (
+	"net"
 	"strconv"
 	"strings"
 
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
+
+// loopbackHost is the address a client dials when the proxy binds a wildcard.
+const (
+	loopbackHost     = "127.0.0.1"
+	loopbackHostIPv6 = "::1"
+)
+
+// ClientURL returns the base URL Claude Code should call the proxy at.
+// Wildcard bind addresses are valid to listen on but not to dial, so they are
+// rewritten to the matching loopback address.
+func ClientURL(host string, port int) string {
+	ip := net.ParseIP(host)
+	switch {
+	case host == "":
+		host = loopbackHost
+	case ip != nil && ip.IsUnspecified() && ip.To4() == nil:
+		host = loopbackHostIPv6
+	case ip != nil && ip.IsUnspecified():
+		host = loopbackHost
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(port))
+}
 
 // Claude Code enables its 1M-context client path only when ANTHROPIC_MODEL
 // ends with "[1m]". The band edges bracket models advertising ~1M input

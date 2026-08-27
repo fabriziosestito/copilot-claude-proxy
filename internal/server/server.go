@@ -17,9 +17,13 @@ type CopilotCaller interface {
 	Do(ctx context.Context, opts copilot.CallOptions) (*http.Response, error)
 }
 
-// TokenHealth reports whether a usable Copilot token is currently cached.
+// TokenHealth reports the state of the cached Copilot token.
 type TokenHealth interface {
+	// TokenValid reports whether a usable token is currently cached.
 	TokenValid() bool
+	// TokenExpiry returns when that token expires, or the zero time when none
+	// has been fetched.
+	TokenExpiry() time.Time
 }
 
 // Config carries the dependencies of a Server.
@@ -27,21 +31,33 @@ type Config struct {
 	Logger  *slog.Logger
 	Copilot CopilotCaller
 	Catalog *copilot.Catalog
-	// Tokens is optional; when set, /health reflects token validity.
+	// Tokens is optional; when set, /health and /status reflect token state.
 	Tokens TokenHealth
+	// AccountType is the resolved Copilot tier, reported by /status.
+	AccountType string
 }
 
 // Server handles the Anthropic-compatible routes.
 type Server struct {
-	logger  *slog.Logger
-	copilot CopilotCaller
-	catalog *copilot.Catalog
-	tokens  TokenHealth
+	logger      *slog.Logger
+	copilot     CopilotCaller
+	catalog     *copilot.Catalog
+	tokens      TokenHealth
+	accountType string
+	startedAt   time.Time
+	activity    activity
 }
 
 // New builds a Server.
 func New(cfg Config) *Server {
-	return &Server{logger: cfg.Logger, copilot: cfg.Copilot, catalog: cfg.Catalog, tokens: cfg.Tokens}
+	return &Server{
+		logger:      cfg.Logger,
+		copilot:     cfg.Copilot,
+		catalog:     cfg.Catalog,
+		tokens:      cfg.Tokens,
+		accountType: cfg.AccountType,
+		startedAt:   time.Now(),
+	}
 }
 
 // Handler returns the routed HTTP handler.
@@ -55,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /anthropic/v1/models", s.handleModels)
 	mux.HandleFunc("POST /api/event_logging", s.handleEventLogging)
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /{$}", s.handleRoot)
 	return s.logRequests(trimTrailingSlash(mux))
 }

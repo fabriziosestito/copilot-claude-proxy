@@ -19,6 +19,9 @@ const (
 
 	onboardingKey = "hasCompletedOnboarding"
 	envKey        = "env"
+
+	// jsonNull is the literal text of an explicitly unset JSON value.
+	jsonNull = "null"
 )
 
 // SetupConfig describes a Claude Code setup run.
@@ -195,7 +198,7 @@ func decodeEnv(raw json.RawMessage) (map[string]string, error) {
 			continue
 		}
 		literal := strings.TrimSpace(string(value))
-		if strings.HasPrefix(literal, "{") || strings.HasPrefix(literal, "[") || literal == "null" {
+		if strings.HasPrefix(literal, "{") || strings.HasPrefix(literal, "[") || literal == jsonNull {
 			return nil, fmt.Errorf("env value %q is not a string", key)
 		}
 		env[key] = literal

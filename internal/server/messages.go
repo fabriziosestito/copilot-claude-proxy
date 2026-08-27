@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
@@ -67,6 +68,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.activity.record(requested, resolution.ID)
 	resp, err := s.copilot.Do(ctx, copilot.CallOptions{
 		Method: http.MethodPost,
 		Path:   "/v1/messages",
@@ -74,12 +76,22 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Header: s.messageHeaders(r, resolution, insight),
 	})
 	if err != nil {
+		// A client that canceled its request also fails the upstream call;
+		// only a failure with the request still live is an upstream problem,
+		// mirroring the stream path.
+		if ctx.Err() == nil {
+			s.activity.fail("upstream unreachable")
+		}
 		s.logger.ErrorContext(ctx, "upstream messages request failed", "error", err)
 		writeAnthropicError(w, http.StatusBadGateway, errTypeAPI,
 			"failed to reach the Copilot API")
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		s.activity.fail("upstream " + strconv.Itoa(resp.StatusCode))
+	}
 
 	if isEventStream(resp.Header) {
 		s.relaySSE(ctx, w, resp)
