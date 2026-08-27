@@ -151,6 +151,25 @@ func TestStatusCountsUpstreamFailures(t *testing.T) {
 			t.Errorf("last_error = %v, want stream aborted", status["last_error"])
 		}
 	})
+
+	t.Run("client cancellation is not an error", func(t *testing.T) {
+		t.Parallel()
+		// A client that goes away mid-request also fails the upstream call;
+		// that is Claude Code's routine abort, not an upstream failure.
+		handler := newStatusHandler(t, &replayCaller{err: context.Canceled})
+
+		canceled, cancel := context.WithCancel(t.Context())
+		cancel()
+		request := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body)).
+			WithContext(canceled)
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+
+		status := getStatus(t, handler)
+		if status["errors"] != float64(0) {
+			t.Errorf("errors = %v, want 0 for a canceled request", status["errors"])
+		}
+	})
 }
 
 // streamCaller answers with a 200 SSE response wrapping the given body, so a
