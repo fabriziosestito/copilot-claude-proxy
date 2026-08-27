@@ -27,8 +27,10 @@ type RunConfig struct {
 	Host    string
 	Port    int
 	// Ready is optional; when set it is called once the listener is bound and
-	// the catalog is loaded, so callers can start clients without polling.
-	Ready func()
+	// the catalog is loaded, with the address the listener bound, so callers
+	// can start clients without polling. With Port 0 the address carries the
+	// ephemeral port the OS assigned.
+	Ready func(addr net.Addr)
 }
 
 // Run serves the proxy until the context is canceled, keeping the Copilot
@@ -73,10 +75,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
 
-	logger.InfoContext(ctx, "proxy listening", "url", "http://"+addr)
+	logger.InfoContext(ctx, "proxy listening", "url", "http://"+listener.Addr().String())
 	logger.InfoContext(ctx, "configure claude code with: copilot-claude-proxy setup")
 	if cfg.Ready != nil {
-		cfg.Ready()
+		cfg.Ready(listener.Addr())
 	}
 
 	serveErr := make(chan error, 1)
