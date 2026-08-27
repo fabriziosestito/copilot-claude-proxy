@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"sync"
 
@@ -28,10 +29,13 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 		Description: "Starts the proxy, waits until it accepts connections, then hands the\n" +
 			"terminal to Claude Code, pinned to the proxy with --settings. The proxy\n" +
 			"shuts down when Claude Code exits, and its exit status is propagated.\n\n" +
+			"With no port configured (--port or COPILOT_CLAUDE_PROXY_PORT) the proxy\n" +
+			"binds a free ephemeral port, so run never collides with another proxy\n" +
+			"already listening on the default port.\n\n" +
 			"Arguments after -- are forwarded to Claude Code:\n" +
 			"  copilot-claude-proxy run -- --resume",
 		Flags: []cli.Flag{
-			portFlag(),
+			runPortFlag(),
 			hostFlag(),
 			accountTypeFlag(),
 			githubTokenFlag(),
@@ -47,12 +51,14 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 }
 
 func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) error {
-	// run pins Claude Code to the proxy URL before the listener binds, so a
-	// port outside the dialable range would leave the client unable to reach
-	// it. Ephemeral (0) is rejected rather than plumbing the bound address back
-	// through readiness; anything past 65535 never binds at all.
-	if port := cmd.Int("port"); port < 1 || port > 65535 {
-		return fmt.Errorf("run requires a fixed --port in 1-65535, got %d", port)
+	// The proxy URL handed to Claude Code embeds the port, so the settings
+	// document is built only after the listener reports what it bound. That
+	// makes the ephemeral default (0) workable: run writes the URL into a
+	// per-session settings file, so a stable port buys nothing and a busy
+	// 4141 would only fail the session.
+	port := cmd.Int("port")
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("run requires --port in 0-65535 (0 picks a free port), got %d", port)
 	}
 
 	// Resolved first so a missing CLI fails before authenticating or binding.
@@ -61,21 +67,13 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 		return err
 	}
 
-	// Built before anything expensive so a malformed --settings is reported
-	// while there is still nothing to tear down.
-	forwarded, settings, err := claudeSettings(cmd)
+	// Split before anything expensive so a malformed --settings among the
+	// forwarded arguments is reported while there is still nothing to tear
+	// down. The document itself is built later, once the bound port is known.
+	forwarded, inherited, err := claudecode.SplitSettingsArg(cmd.Args().Slice())
 	if err != nil {
 		return err
 	}
-
-	// The merged document goes to Claude Code as a private file rather than
-	// inline: an inherited settings file may carry credentials, and argv is
-	// readable by every process on the machine.
-	settingsPath, removeSettings, err := claudecode.WriteSettingsFile(settings)
-	if err != nil {
-		return err
-	}
-	defer removeSettings()
 
 	logger, closeLogs, err := proxyLogger(cmd)
 	if err != nil {
@@ -91,20 +89,24 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 	proxyCtx, stopProxy := context.WithCancel(ctx)
 	defer stopProxy()
 
-	ready := make(chan struct{})
+	ready := make(chan net.Addr, 1)
+	var readyOnce sync.Once
 	proxyDone := make(chan error, 1)
 	go func() {
 		proxyDone <- server.Run(proxyCtx, server.RunConfig{
 			Logger:  logger,
 			Session: session,
 			Host:    cmd.String("host"),
-			Port:    cmd.Int("port"),
-			Ready:   sync.OnceFunc(func() { close(ready) }),
+			Port:    port,
+			Ready: func(addr net.Addr) {
+				readyOnce.Do(func() { ready <- addr })
+			},
 		})
 	}()
 
+	var boundAddr net.Addr
 	select {
-	case <-ready:
+	case boundAddr = <-ready:
 	case <-ctx.Done():
 		return ctx.Err()
 	case proxyErr := <-proxyDone:
@@ -113,6 +115,29 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 		}
 		return errProxyStopped
 	}
+
+	// Failures past this point leave a running proxy behind; stop it and wait
+	// for its shutdown to finish so nothing logs after the file is closed.
+	stopAndDrain := func() {
+		stopProxy()
+		<-proxyDone
+	}
+
+	settings, err := buildClaudeSettings(cmd, inherited, boundAddr)
+	if err != nil {
+		stopAndDrain()
+		return err
+	}
+
+	// The merged document goes to Claude Code as a private file rather than
+	// inline: an inherited settings file may carry credentials, and argv is
+	// readable by every process on the machine.
+	settingsPath, removeSettings, err := claudecode.WriteSettingsFile(settings)
+	if err != nil {
+		stopAndDrain()
+		return err
+	}
+	defer removeSettings()
 
 	// Claude Code owns the terminal from here, including Ctrl-C.
 	restoreInterrupt := signals.DetachInterrupt()
@@ -182,31 +207,30 @@ func superviseSession(
 	return nil
 }
 
-// claudeSettings splits a --settings the user passed after -- out of the
-// forwarded arguments and folds it into the document this command supplies.
+// buildClaudeSettings renders the settings document pinning Claude Code to
+// the proxy at boundAddr, folding in a --settings the user passed after --.
 // Claude Code keeps only the last --settings on a command line, so forwarding
-// theirs alongside ours would silently discard the proxy connection.
-func claudeSettings(cmd *cli.Command) ([]string, string, error) {
-	forwarded, inherited, err := claudecode.SplitSettingsArg(cmd.Args().Slice())
-	if err != nil {
-		return nil, "", err
+// theirs alongside ours would silently discard the proxy connection. The URL
+// host comes from --host so a wildcard bind is rewritten to a dialable
+// loopback, while the port comes from the listener so an ephemeral bind
+// reports the port it was actually assigned.
+func buildClaudeSettings(cmd *cli.Command, inherited string, boundAddr net.Addr) (string, error) {
+	tcpAddr, ok := boundAddr.(*net.TCPAddr)
+	if !ok {
+		return "", fmt.Errorf("proxy bound a non-TCP address %q", boundAddr)
 	}
+	serverURL := claudecode.ClientURL(cmd.String("host"), tcpAddr.Port)
 
-	serverURL := clientURL(cmd)
 	var statusLine string
 	if !cmd.Bool("no-statusline") {
 		statusLine = claudecode.StatusLineCommand(serverURL)
 	}
 
-	settings, err := claudecode.BuildSettings(claudecode.SettingsConfig{
+	return claudecode.BuildSettings(claudecode.SettingsConfig{
 		BaseURL:           serverURL,
 		StatusLineCommand: statusLine,
 		Inherited:         inherited,
 	})
-	if err != nil {
-		return nil, "", err
-	}
-	return forwarded, settings, nil
 }
 
 // proxyLogger builds the logger for a proxy sharing a terminal with Claude
