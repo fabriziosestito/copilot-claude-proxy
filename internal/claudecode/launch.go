@@ -73,8 +73,7 @@ func Launch(ctx context.Context, cfg LaunchConfig) (int, error) {
 	cmd.WaitDelay = terminationGrace
 
 	err := cmd.Run()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return exitStatus(exitErr), nil
 	}
 	if err != nil {

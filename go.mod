@@ -1,6 +1,6 @@
 module github.com/fabriziosestito/copilot-claude-proxy
 
-go 1.25.0
+go 1.27.0
 
 require (
 	github.com/urfave/cli/v3 v3.11.0
