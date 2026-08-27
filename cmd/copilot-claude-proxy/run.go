@@ -34,7 +34,7 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 			"Arguments after -- are forwarded to Claude Code:\n" +
 			"  copilot-claude-proxy run -- --resume",
 		Flags: []cli.Flag{
-			portFlag(),
+			runPortFlag(),
 			hostFlag(),
 			accountTypeFlag(),
 			githubTokenFlag(),
@@ -52,13 +52,10 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) error {
 	// The proxy URL handed to Claude Code embeds the port, so the settings
 	// document is built only after the listener reports what it bound. That
-	// makes an ephemeral port (0) workable, and it is the default when no
-	// --port is given: run writes the URL into a per-session settings file, so
-	// a stable port buys nothing and a busy 4141 would only fail the session.
+	// makes the ephemeral default (0) workable: run writes the URL into a
+	// per-session settings file, so a stable port buys nothing and a busy
+	// 4141 would only fail the session.
 	port := cmd.Int("port")
-	if !cmd.IsSet("port") {
-		port = 0
-	}
 	if port < 0 || port > 65535 {
 		return fmt.Errorf("run requires --port in 0-65535 (0 picks a free port), got %d", port)
 	}
@@ -118,8 +115,16 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 		return errProxyStopped
 	}
 
+	// Failures past this point leave a running proxy behind; stop it and wait
+	// for its shutdown to finish so nothing logs after the file is closed.
+	stopAndDrain := func() {
+		stopProxy()
+		<-proxyDone
+	}
+
 	settings, err := buildClaudeSettings(cmd, inherited, boundAddr)
 	if err != nil {
+		stopAndDrain()
 		return err
 	}
 
@@ -128,6 +133,7 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 	// readable by every process on the machine.
 	settingsPath, removeSettings, err := claudecode.WriteSettingsFile(settings)
 	if err != nil {
+		stopAndDrain()
 		return err
 	}
 	defer removeSettings()

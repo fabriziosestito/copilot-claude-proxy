@@ -69,6 +69,15 @@ func portFlag() *cli.IntFlag {
 	}
 }
 
+// runPortFlag defaults to an ephemeral port: run pins Claude Code to whatever
+// was bound, so a fixed default would only collide with other proxies.
+func runPortFlag() *cli.IntFlag {
+	flag := portFlag()
+	flag.Value = 0
+	flag.Usage = "Port the proxy listens on; 0 (the default) picks a free port"
+	return flag
+}
+
 func hostFlag() *cli.StringFlag {
 	return &cli.StringFlag{
 		Name:    "host",
