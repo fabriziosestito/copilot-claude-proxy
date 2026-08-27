@@ -92,9 +92,9 @@ status of `run`, and Ctrl-C goes to Claude Code rather than tearing the proxy
 down.
 
 Unlike `start`, `run` binds a free ephemeral port by default instead of `4141`,
-so it never collides with a proxy that is already running; pass `--port` to pin
-one. The session is pinned to whatever port was bound (see below), so nothing
-else needs to know the number.
+so it never collides with a proxy that is already running; pass `--port` (or
+set `COPILOT_CLAUDE_PROXY_PORT`) to pin one. The session is pinned to whatever
+port was bound (see below), so nothing else needs to know the number.
 
 Arguments after `--` are forwarded to Claude Code:
 

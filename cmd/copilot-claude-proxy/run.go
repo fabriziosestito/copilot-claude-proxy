@@ -29,8 +29,9 @@ func newRunCommand(signals *signalHandling) *cli.Command {
 		Description: "Starts the proxy, waits until it accepts connections, then hands the\n" +
 			"terminal to Claude Code, pinned to the proxy with --settings. The proxy\n" +
 			"shuts down when Claude Code exits, and its exit status is propagated.\n\n" +
-			"Without --port the proxy binds a free ephemeral port, so run never\n" +
-			"collides with another proxy already listening on the default port.\n\n" +
+			"With no port configured (--port or COPILOT_CLAUDE_PROXY_PORT) the proxy\n" +
+			"binds a free ephemeral port, so run never collides with another proxy\n" +
+			"already listening on the default port.\n\n" +
 			"Arguments after -- are forwarded to Claude Code:\n" +
 			"  copilot-claude-proxy run -- --resume",
 		Flags: []cli.Flag{
