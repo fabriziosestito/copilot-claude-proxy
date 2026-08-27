@@ -18,8 +18,7 @@ func NewDeviceAuthorizationForTest(
 // OAuthErrorCode returns the OAuth error code when err is a definitive OAuth
 // error response, for external tests.
 func OAuthErrorCode(err error) (string, bool) {
-	var oauthErr *oauthError
-	if errors.As(err, &oauthErr) {
+	if oauthErr, ok := errors.AsType[*oauthError](err); ok {
 		return oauthErr.code, true
 	}
 	return "", false
