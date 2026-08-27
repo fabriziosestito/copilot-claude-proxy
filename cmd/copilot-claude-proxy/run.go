@@ -228,6 +228,12 @@ func proxyLogger(cmd *cli.Command) (*slog.Logger, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open log file: %w", err)
 	}
+	// OpenFile's mode only applies on creation; a pre-existing file keeps
+	// whatever permissions it had, so tighten it explicitly.
+	if err := file.Chmod(logFilePermissions); err != nil {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("restrict log file permissions: %w", err)
+	}
 	level := slog.LevelInfo
 	if verbose {
 		level = slog.LevelDebug
