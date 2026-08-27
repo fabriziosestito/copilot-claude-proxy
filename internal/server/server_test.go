@@ -31,6 +31,22 @@ type fakeCaller struct {
 	err      error
 }
 
+type fakeAccountController struct {
+	usage copilot.PoolUsage
+}
+
+func (f *fakeAccountController) Usage() copilot.PoolUsage { return f.usage }
+
+func (f *fakeAccountController) SwitchAccount(name string) error {
+	for _, account := range f.usage.Accounts {
+		if account.Name == name {
+			f.usage.Current = name
+			return nil
+		}
+	}
+	return errors.New("account is not connected")
+}
+
 func (f *fakeCaller) Do(_ context.Context, opts copilot.CallOptions) (*http.Response, error) {
 	f.opts = opts
 	if f.err != nil {
@@ -121,6 +137,35 @@ func TestMessagesRewritesModelAndSetsHeaders(t *testing.T) {
 	}
 	if recorder.Body.String() != `{"id":"msg_1"}` {
 		t.Errorf("body = %q, want passthrough", recorder.Body.String())
+	}
+}
+
+func TestAccountSwitchUpdatesStats(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.DiscardHandler)
+	catalog := copilot.NewCatalog(staticFetcher{models: testModels()}, logger, nil)
+	if err := catalog.Refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	controller := &fakeAccountController{usage: copilot.PoolUsage{
+		Current:  "alice",
+		Accounts: []copilot.AccountUsage{{Name: "alice"}, {Name: "bob"}},
+	}}
+	handler := server.New(server.Config{
+		Logger: logger, Copilot: &fakeCaller{}, Catalog: catalog,
+		Stats: controller, Accounts: controller,
+	}).Handler()
+
+	recorder := postJSON(handler, "/accounts/switch", `{"account":"bob"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("switch status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var usage copilot.PoolUsage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &usage); err != nil {
+		t.Fatal(err)
+	}
+	if usage.Current != "bob" {
+		t.Fatalf("current account = %q, want bob", usage.Current)
 	}
 }
 

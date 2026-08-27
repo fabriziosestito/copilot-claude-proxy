@@ -14,6 +14,8 @@ import (
 // base64 images stay well below this).
 const maxRequestBodyBytes = 128 << 20
 
+const unsupportedAdvisorToolBeta = "advisor-tool-2026-03-01"
+
 // handleMessages forwards Anthropic Messages API requests to Copilot, which
 // serves the Anthropic wire format natively for Anthropic-vendor models. The
 // proxy only rewrites the model name and enriches headers; bodies pass
@@ -100,14 +102,27 @@ func (s *Server) messageHeaders(
 	// Join all anthropic-beta field lines: clients may legally send several
 	// (e.g. the SDK's comma-joined line plus an ANTHROPIC_CUSTOM_HEADERS one),
 	// and Get would silently drop all but the first.
-	if betas := r.Header.Values("Anthropic-Beta"); len(betas) > 0 {
-		header.Set("Anthropic-Beta", strings.Join(betas, ","))
+	if betas := supportedAnthropicBetas(r.Header.Values("Anthropic-Beta")); betas != "" {
+		header.Set("Anthropic-Beta", betas)
 	}
 	visionCapable := !resolution.Known || resolution.Model.Capabilities.Supports.Vision
 	if insight.vision && visionCapable {
 		header.Set("Copilot-Vision-Request", "true")
 	}
 	return header
+}
+
+func supportedAnthropicBetas(headerValues []string) string {
+	var supported []string
+	for _, headerValue := range headerValues {
+		for _, beta := range strings.Split(headerValue, ",") {
+			beta = strings.TrimSpace(beta)
+			if beta != "" && beta != unsupportedAdvisorToolBeta {
+				supported = append(supported, beta)
+			}
+		}
+	}
+	return strings.Join(supported, ",")
 }
 
 // messageInsight summarizes request traits that influence upstream headers.

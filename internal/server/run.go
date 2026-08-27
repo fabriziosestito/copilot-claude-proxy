@@ -23,7 +23,8 @@ const (
 // RunConfig carries the dependencies of Run.
 type RunConfig struct {
 	Logger  *slog.Logger
-	Session *copilot.Session
+	Pool    *copilot.AccountPool
+	Catalog *copilot.Catalog
 	Host    string
 	Port    int
 }
@@ -33,23 +34,28 @@ type RunConfig struct {
 // gracefully.
 func Run(ctx context.Context, cfg RunConfig) error {
 	logger := cfg.Logger
-	session := cfg.Session
+	pool := cfg.Pool
+	catalog := cfg.Catalog
 
-	if refreshErr := session.Catalog.Refresh(ctx); refreshErr != nil {
+	if refreshErr := catalog.Refresh(ctx); refreshErr != nil {
 		logger.WarnContext(ctx, "initial model catalog fetch failed, retrying in the background",
 			"error", refreshErr)
 	} else {
-		logCatalogSummary(ctx, logger, session.Catalog)
+		logCatalogSummary(ctx, logger, catalog)
 	}
 
-	go session.Tokens.Run(ctx)
-	go session.Catalog.Run(ctx, copilot.ModelRefreshInterval)
+	for _, account := range pool.Sessions() {
+		go account.Session.Tokens.Run(ctx)
+	}
+	go catalog.Run(ctx, copilot.ModelRefreshInterval)
 
 	proxy := New(Config{
-		Logger:  logger,
-		Copilot: session.Client,
-		Catalog: session.Catalog,
-		Tokens:  session.Tokens,
+		Logger:   logger,
+		Copilot:  pool,
+		Catalog:  catalog,
+		Tokens:   pool,
+		Stats:    pool,
+		Accounts: pool,
 	})
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))

@@ -57,13 +57,57 @@ $ claude
 
 ## Commands
 
-| Command  | Description                                                                        |
-| -------- | ---------------------------------------------------------------------------------- |
-| `auth`   | GitHub device-flow login; opens the browser and stores the token in the OS keyring |
-| `logout` | Remove the stored token from the OS keyring                                        |
-| `start`  | Run the proxy server (default `127.0.0.1:4141`)                                    |
-| `setup`  | Generate Claude Code configuration pointing at this proxy                          |
-| `models` | List the models available on your Copilot account                                  |
+| Command                   | Description                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| `auth`                    | GitHub device-flow login; opens the browser and stores the token in the OS keyring |
+| `logout`                  | Remove stored tokens from the OS keyring (all accounts by default)                 |
+| `accounts`                | List authenticated GitHub accounts and mark the active one                         |
+| `accounts switch <login>` | Point the running proxy at another account without restarting it                   |
+| `start`                   | Run the proxy server (default `127.0.0.1:4141`)                                    |
+| `stats`                   | Show runtime requests, rate limits, and account failovers                          |
+| `setup`                   | Generate Claude Code configuration pointing at this proxy                          |
+| `models`                  | List the models available on your Copilot account                                  |
+
+### Multiple accounts
+
+Run `auth` once for each GitHub account. Tokens are stored separately under
+the authenticated GitHub login. `start` connects every stored account and, when
+Copilot reports the account is spent, retries the request once per remaining
+account. Two upstream statuses trigger the failover:
+
+- `429 Too Many Requests` — the account hit a rate limit.
+- `402 Payment Required` — the account used up its monthly premium-request
+  quota (`You have exceeded your monthly quota`).
+
+If every account is exhausted, the last upstream response is returned
+unchanged.
+
+```console
+$ copilot-claude-proxy auth
+$ copilot-claude-proxy auth
+$ copilot-claude-proxy accounts
+$ copilot-claude-proxy start
+```
+
+While the proxy is running, `copilot-claude-proxy stats` shows upstream request,
+429, 402, and failover counts for the current process. These are proxy runtime
+statistics, not GitHub billing or exact premium-request credit totals.
+
+`accounts` marks the account currently used for new requests with `*`. Switch it
+without restarting the proxy with:
+
+```console
+$ copilot-claude-proxy accounts switch <github-login>
+```
+
+The misspelled `accounts swith` is also accepted as an alias. Automatic 429
+failover remains enabled after a manual switch.
+
+`accounts`, `accounts switch`, and `stats` talk to the running proxy, so they
+take the same `--host/-H` and `--port/-p` flags as `start` when it is not on
+the default `127.0.0.1:4141`. Drop a single account with
+`copilot-claude-proxy logout --account <github-login>`; plain `logout` removes
+every stored token.
 
 ### `start` options
 

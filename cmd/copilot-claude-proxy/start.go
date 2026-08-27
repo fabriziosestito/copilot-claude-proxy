@@ -25,13 +25,14 @@ func newStartCommand() *cli.Command {
 }
 
 func runStart(ctx context.Context, cmd *cli.Command) error {
-	session, logger, err := connect(ctx, cmd)
+	pool, primary, logger, err := connectAccountPool(ctx, cmd)
 	if err != nil {
 		return err
 	}
 	return server.Run(ctx, server.RunConfig{
 		Logger:  logger,
-		Session: session,
+		Pool:    pool,
+		Catalog: primary.Catalog,
 		Host:    cmd.String("host"),
 		Port:    cmd.Int("port"),
 	})
