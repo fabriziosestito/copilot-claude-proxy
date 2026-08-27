@@ -76,6 +76,30 @@ func BuildSettings(cfg SettingsConfig) (string, error) {
 	return string(encoded), nil
 }
 
+// WriteSettingsFile stores a settings document in a private temporary file
+// and returns its path, for passing to --settings by name. Inline JSON would
+// work too, but it puts the whole document — including whatever an inherited
+// settings file carried — into Claude Code's argv, where any process on the
+// machine can read it; a mode-0600 file keeps it owner-only. The returned
+// cleanup removes the file and must be called once the session is over.
+func WriteSettingsFile(document string) (string, func(), error) {
+	file, err := os.CreateTemp("", "copilot-claude-proxy-settings-*.json")
+	if err != nil {
+		return "", nil, fmt.Errorf("create settings file: %w", err)
+	}
+	cleanup := func() { _ = os.Remove(file.Name()) }
+
+	_, writeErr := file.WriteString(document)
+	if closeErr := file.Close(); writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("write settings file: %w", writeErr)
+	}
+	return file.Name(), cleanup, nil
+}
+
 // inheritedSettings decodes the user's --settings value, which Claude Code
 // accepts as either a file path or an inline JSON document.
 func inheritedSettings(value string) (map[string]json.RawMessage, error) {

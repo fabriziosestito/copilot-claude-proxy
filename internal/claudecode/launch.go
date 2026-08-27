@@ -29,8 +29,10 @@ type LaunchConfig struct {
 	Path string
 	// Args are the arguments forwarded to Claude Code.
 	Args []string
-	// Settings, when non-empty, is a JSON document passed as --settings that
-	// pins this session to the proxy that launched it.
+	// Settings, when non-empty, is passed as --settings and pins this session
+	// to the proxy that launched it. Claude Code accepts either a path to a
+	// JSON file or an inline document; a file keeps inherited values out of
+	// the child's argv.
 	Settings string
 }
 

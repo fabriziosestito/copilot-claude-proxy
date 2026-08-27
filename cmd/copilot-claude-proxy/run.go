@@ -68,6 +68,15 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 		return err
 	}
 
+	// The merged document goes to Claude Code as a private file rather than
+	// inline: an inherited settings file may carry credentials, and argv is
+	// readable by every process on the machine.
+	settingsPath, removeSettings, err := claudecode.WriteSettingsFile(settings)
+	if err != nil {
+		return err
+	}
+	defer removeSettings()
+
 	logger, closeLogs, err := proxyLogger(cmd)
 	if err != nil {
 		return err
@@ -112,7 +121,7 @@ func runRun(ctx context.Context, cmd *cli.Command, signals *signalHandling) erro
 	return superviseSession(ctx, claudecode.LaunchConfig{
 		Path:     claudePath,
 		Args:     forwarded,
-		Settings: settings,
+		Settings: settingsPath,
 	}, stopProxy, proxyDone)
 }
 

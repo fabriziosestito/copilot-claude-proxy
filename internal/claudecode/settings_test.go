@@ -265,3 +265,35 @@ func TestSplitSettingsArgRejectsAMissingValue(t *testing.T) {
 		t.Errorf("error %q does not name the flag", err)
 	}
 }
+
+func TestWriteSettingsFileKeepsTheDocumentPrivate(t *testing.T) {
+	t.Parallel()
+	document := `{"env":{"ANTHROPIC_BASE_URL":"` + proxyURL + `"}}`
+
+	path, cleanup, err := claudecode.WriteSettingsFile(document)
+	if err != nil {
+		t.Fatalf("WriteSettingsFile: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings file: %v", err)
+	}
+	if string(content) != document {
+		t.Errorf("content = %q, want %q", content, document)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat settings file: %v", err)
+	}
+	// The document may carry inherited credentials; nobody else may read it.
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("permissions = %v, want 0600", perm)
+	}
+
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("cleanup left the settings file behind: %v", err)
+	}
+}
