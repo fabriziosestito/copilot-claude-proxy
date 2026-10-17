@@ -19,9 +19,14 @@ const ModelRefreshInterval = 10 * time.Minute
 // interval would be far too long.
 const catalogRetryDelay = 30 * time.Second
 
+// Endpoints Copilot lists in a model's supported_endpoints.
 const (
 	anthropicMessagesEndpoint = "/v1/messages"
-	anthropicVendor           = "anthropic"
+	// OpenAIResponsesEndpoint is the OpenAI Responses API path.
+	OpenAIResponsesEndpoint = "/responses"
+	// OpenAIChatCompletionsEndpoint is the OpenAI Chat Completions API path.
+	OpenAIChatCompletionsEndpoint = "/chat/completions"
+	anthropicVendor               = "anthropic"
 )
 
 // Model describes a Copilot model catalog entry.
@@ -39,10 +44,29 @@ type Model struct {
 // SupportsAnthropicMessages reports whether Copilot natively serves this model
 // through the Anthropic Messages API.
 func (m Model) SupportsAnthropicMessages() bool {
+	return m.SupportsEndpoint(anthropicMessagesEndpoint)
+}
+
+// SupportsEndpoint reports whether Copilot lists the endpoint for this model.
+// A catalog entry without supported_endpoints carries no information, so the
+// vendor decides: an Anthropic model is assumed to speak only the Anthropic
+// Messages API, and any other model is assumed eligible for the OpenAI
+// dialects, with Copilot making the final decision.
+func (m Model) SupportsEndpoint(endpoint string) bool {
 	if len(m.SupportedEndpoints) > 0 {
-		return slices.Contains(m.SupportedEndpoints, anthropicMessagesEndpoint)
+		return slices.Contains(m.SupportedEndpoints, endpoint)
 	}
-	return strings.EqualFold(m.Vendor, anthropicVendor)
+	isAnthropic := strings.EqualFold(m.Vendor, anthropicVendor)
+	if endpoint == anthropicMessagesEndpoint {
+		return isAnthropic
+	}
+	return !isAnthropic
+}
+
+// SupportsOpenAI reports whether the model is reachable through at least one
+// OpenAI-dialect endpoint.
+func (m Model) SupportsOpenAI() bool {
+	return m.SupportsEndpoint(OpenAIResponsesEndpoint) || m.SupportsEndpoint(OpenAIChatCompletionsEndpoint)
 }
 
 // ModelCapabilities carries limits and feature support of a model.
