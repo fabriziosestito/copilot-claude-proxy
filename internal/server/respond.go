@@ -41,3 +41,23 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeAnthropicError(w http.ResponseWriter, status int, errType, message string) {
 	writeJSON(w, status, newAnthropicError(errType, message))
 }
+
+type openAIErrorPayload struct {
+	Error openAIErrorDetail `json:"error"`
+}
+
+type openAIErrorDetail struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Param   string `json:"param,omitempty"`
+}
+
+func newOpenAIError(errType, message, param string) openAIErrorPayload {
+	return openAIErrorPayload{
+		Error: openAIErrorDetail{Type: errType, Message: message, Param: param},
+	}
+}
+
+func writeOpenAIError(w http.ResponseWriter, status int, errType, message, param string) {
+	writeJSON(w, status, newOpenAIError(errType, message, param))
+}

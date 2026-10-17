@@ -1,5 +1,5 @@
-// Package server exposes the Anthropic-compatible HTTP surface backed by the
-// GitHub Copilot API.
+// Package server exposes the Anthropic- and OpenAI-compatible HTTP surface
+// backed by the GitHub Copilot API.
 package server
 
 import (
@@ -37,7 +37,7 @@ type Config struct {
 	AccountType string
 }
 
-// Server handles the Anthropic-compatible routes.
+// Server handles the Anthropic- and OpenAI-compatible routes.
 type Server struct {
 	logger      *slog.Logger
 	copilot     CopilotCaller
@@ -68,7 +68,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/messages/count_tokens", s.handleCountTokens)
 	mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)
 	mux.HandleFunc("GET /v1/models", s.handleModels)
-	mux.HandleFunc("GET /anthropic/v1/models", s.handleModels)
+	mux.HandleFunc("GET /anthropic/v1/models", s.handleAnthropicModels)
+	mux.HandleFunc("POST /v1/responses", s.handleResponses)
+	mux.HandleFunc("POST /openai/v1/responses", s.handleResponses)
+	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("POST /openai/v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("GET /openai/v1/models", s.handleOpenAIModels)
 	mux.HandleFunc("POST /api/event_logging", s.handleEventLogging)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /status", s.handleStatus)
@@ -78,40 +83,62 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("copilot-claude-proxy is running\n"))
+	_, _ = w.Write([]byte("copilot-claude-proxy is running (Anthropic and OpenAI routes)\n"))
 }
 
 type healthResponse struct {
 	Status          string `json:"status"`
 	Models          int    `json:"models"`
 	AnthropicModels int    `json:"anthropic_models"`
+	OpenAIModels    int    `json:"openai_models"`
 	TokenValid      bool   `json:"token_valid"`
 }
 
 // handleHealth reports whether the proxy can actually serve traffic: a valid
 // Copilot token must be cached and the catalog must contain at least one
-// model usable through the Anthropic Messages API. Anything less is degraded
-// and answers 503 so monitors notice.
+// model usable through some route. Anything less is degraded and answers 503
+// so monitors notice. The per-dialect counts let a monitor that needs one
+// specific API apply a stricter check.
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	models := s.catalog.Models()
-	anthropic := 0
-	for _, model := range models {
-		if model.SupportsAnthropicMessages() {
-			anthropic++
-		}
-	}
+	counts := countByDialect(models)
 	tokenValid := s.tokens == nil || s.tokens.TokenValid()
 
 	status, code := "ok", http.StatusOK
-	if !tokenValid || anthropic == 0 {
+	if !tokenValid || counts.servable() == 0 {
 		status, code = "degraded", http.StatusServiceUnavailable
 	}
 	writeJSON(w, code, healthResponse{
 		Status:          status,
 		Models:          len(models),
-		AnthropicModels: anthropic,
+		AnthropicModels: counts.anthropic,
+		OpenAIModels:    counts.openAI,
 		TokenValid:      tokenValid,
 	})
+}
+
+// dialectCounts tallies how many catalog models each wire protocol can serve.
+type dialectCounts struct {
+	anthropic int
+	openAI    int
+}
+
+// servable is the number of models reachable through at least one route.
+func (c dialectCounts) servable() int {
+	return c.anthropic + c.openAI
+}
+
+func countByDialect(models []copilot.Model) dialectCounts {
+	var counts dialectCounts
+	for _, model := range models {
+		if model.SupportsAnthropicMessages() {
+			counts.anthropic++
+		}
+		if model.SupportsOpenAI() {
+			counts.openAI++
+		}
+	}
+	return counts
 }
 
 // handleEventLogging swallows Anthropic SDK telemetry so clients do not retry.

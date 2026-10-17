@@ -66,6 +66,7 @@ type statusResponse struct {
 	TokenExpiresIn  int         `json:"token_expires_in_seconds"`
 	Models          int         `json:"models"`
 	AnthropicModels int         `json:"anthropic_models"`
+	OpenAIModels    int         `json:"openai_models"`
 	UptimeSeconds   int         `json:"uptime_seconds"`
 	Requests        uint64      `json:"requests"`
 	Errors          uint64      `json:"errors"`
@@ -82,12 +83,7 @@ type statusModel struct {
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	models := s.catalog.Models()
-	anthropic := 0
-	for _, model := range models {
-		if model.SupportsAnthropicMessages() {
-			anthropic++
-		}
-	}
+	counts := countByDialect(models)
 
 	tokenValid, expiresIn := true, 0
 	if s.tokens != nil {
@@ -98,7 +94,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	status := "ok"
-	if !tokenValid || anthropic == 0 {
+	if !tokenValid || counts.servable() == 0 {
 		status = "degraded"
 	}
 
@@ -109,7 +105,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		TokenValid:      tokenValid,
 		TokenExpiresIn:  expiresIn,
 		Models:          len(models),
-		AnthropicModels: anthropic,
+		AnthropicModels: counts.anthropic,
+		OpenAIModels:    counts.openAI,
 		UptimeSeconds:   int(time.Since(s.startedAt).Seconds()),
 		Requests:        current.requests,
 		Errors:          current.failures,

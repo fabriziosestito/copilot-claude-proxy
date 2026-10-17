@@ -3,110 +3,41 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/fabriziosestito/copilot-claude-proxy/internal/copilot"
 )
 
-// maxRequestBodyBytes bounds incoming request bodies (1M-context prompts with
-// base64 images stay well below this).
-const maxRequestBodyBytes = 128 << 20
+// anthropicDialect forwards Anthropic Messages API requests to Copilot, which
+// serves the Anthropic wire format natively for Anthropic-vendor models.
+func anthropicDialect() wireDialect {
+	return wireDialect{
+		upstreamPath: "/v1/messages",
+		writeError: func(w http.ResponseWriter, status int, errType, message, _ string) {
+			writeAnthropicError(w, status, errType, message)
+		},
+		rejectModel: func(model copilot.Model) string {
+			if model.SupportsAnthropicMessages() {
+				return ""
+			}
+			return fmt.Sprintf("model %q does not support the Anthropic Messages API on Copilot", model.ID)
+		},
+		hasImage: func(payload map[string]json.RawMessage) bool {
+			return inspectMessages(payload["messages"]).vision
+		},
+		headers: messageHeaders,
+		sse:     anthropicSSE(),
+	}
+}
 
-// handleMessages forwards Anthropic Messages API requests to Copilot, which
-// serves the Anthropic wire format natively for Anthropic-vendor models. The
-// proxy only rewrites the model name and enriches headers; bodies pass
-// through untouched otherwise.
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
-	if err != nil {
-		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest,
-			"failed to read request body: "+err.Error())
-		return
-	}
-
-	var payload map[string]json.RawMessage
-	if parseErr := json.Unmarshal(body, &payload); parseErr != nil {
-		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest,
-			"request body is not valid JSON")
-		return
-	}
-
-	requested := rawString(payload["model"])
-	if requested == "" {
-		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest, "model is required")
-		return
-	}
-
-	resolution := s.catalog.Resolve(requested)
-	if resolution.Known && !resolution.Model.SupportsAnthropicMessages() {
-		writeAnthropicError(w, http.StatusBadRequest, errTypeInvalidRequest, fmt.Sprintf(
-			"model %q does not support the Anthropic Messages API on Copilot; "+
-				"this proxy serves Anthropic-vendor models only", resolution.ID))
-		return
-	}
-	if resolution.ID != requested {
-		s.logger.DebugContext(ctx, "model resolved", "requested", requested, "resolved", resolution.ID)
-		encoded, encodeErr := json.Marshal(resolution.ID)
-		if encodeErr != nil {
-			writeAnthropicError(w, http.StatusInternalServerError, errTypeAPI,
-				"failed to encode resolved model name")
-			return
-		}
-		payload["model"] = encoded
-	}
-
-	insight := inspectMessages(payload["messages"])
-	upstreamBody, err := json.Marshal(payload)
-	if err != nil {
-		writeAnthropicError(w, http.StatusInternalServerError, errTypeAPI,
-			"failed to re-encode request body")
-		return
-	}
-
-	s.activity.record(requested, resolution.ID)
-	resp, err := s.copilot.Do(ctx, copilot.CallOptions{
-		Method: http.MethodPost,
-		Path:   "/v1/messages",
-		Body:   upstreamBody,
-		Header: s.messageHeaders(r, resolution, insight),
-	})
-	if err != nil {
-		// A client that canceled its request also fails the upstream call;
-		// only a failure with the request still live is an upstream problem,
-		// mirroring the stream path.
-		if ctx.Err() == nil {
-			s.activity.fail("upstream unreachable")
-		}
-		s.logger.ErrorContext(ctx, "upstream messages request failed", "error", err)
-		writeAnthropicError(w, http.StatusBadGateway, errTypeAPI,
-			"failed to reach the Copilot API")
-		return
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		s.activity.fail("upstream " + strconv.Itoa(resp.StatusCode))
-	}
-
-	if isEventStream(resp.Header) {
-		s.relaySSE(ctx, w, resp)
-		return
-	}
-	copyResponse(w, resp)
+	s.forward(w, r, anthropicDialect())
 }
 
 // messageHeaders builds the /v1/messages specific headers layered on top of
 // the standard Copilot set.
-func (s *Server) messageHeaders(
-	r *http.Request,
-	resolution copilot.Resolution,
-	insight messageInsight,
-) http.Header {
+func messageHeaders(r *http.Request, resolution copilot.Resolution, vision bool) http.Header {
 	header := http.Header{}
 	header.Set("Anthropic-Version", copilot.AnthropicVersion)
 	// Join all anthropic-beta field lines: clients may legally send several
@@ -116,7 +47,7 @@ func (s *Server) messageHeaders(
 		header.Set("Anthropic-Beta", strings.Join(betas, ","))
 	}
 	visionCapable := !resolution.Known || resolution.Model.Capabilities.Supports.Vision
-	if insight.vision && visionCapable {
+	if vision && visionCapable {
 		header.Set("Copilot-Vision-Request", "true")
 	}
 	return header
@@ -169,45 +100,4 @@ func contentHasImage(content json.RawMessage, recurse bool) bool {
 		}
 	}
 	return false
-}
-
-func rawString(raw json.RawMessage) string {
-	var value string
-	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return ""
-	}
-	return value
-}
-
-// isHopByHopHeader reports whether a canonical header key is connection-scoped
-// (RFC 9110 section 7.6.1) and must not be relayed to the client.
-func isHopByHopHeader(key string) bool {
-	switch key {
-	case "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
-		"Proxy-Connection", "Te", "Trailer", "Transfer-Encoding", "Upgrade":
-		return true
-	default:
-		return false
-	}
-}
-
-// copyHeaders relays upstream response headers so rate-limit metadata
-// (retry-after, anthropic-ratelimit-*) and request ids survive the proxy.
-func copyHeaders(dst, src http.Header) {
-	for key, values := range src {
-		canonical := http.CanonicalHeaderKey(key)
-		if isHopByHopHeader(canonical) {
-			continue
-		}
-		dst[canonical] = values
-	}
-}
-
-func copyResponse(w http.ResponseWriter, resp *http.Response) {
-	copyHeaders(w.Header(), resp.Header)
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", contentTypeJSON)
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
 }

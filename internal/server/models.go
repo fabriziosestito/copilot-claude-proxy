@@ -20,9 +20,20 @@ type anthropicModelList struct {
 	LastID  string               `json:"last_id,omitempty"`
 }
 
-// handleModels lists the catalog models usable through this proxy in the
-// Anthropic list format.
-func (s *Server) handleModels(w http.ResponseWriter, _ *http.Request) {
+// handleModels serves GET /v1/models, which both wire formats claim. The
+// Anthropic SDK and Claude Code always send Anthropic-Version, so that header
+// selects the Anthropic list; every other client gets the OpenAI list.
+func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Anthropic-Version") != "" {
+		s.handleAnthropicModels(w, r)
+		return
+	}
+	s.handleOpenAIModels(w, r)
+}
+
+// handleAnthropicModels lists the catalog models usable through the Anthropic
+// Messages API in the Anthropic list format.
+func (s *Server) handleAnthropicModels(w http.ResponseWriter, _ *http.Request) {
 	models := s.catalog.Models()
 	data := make([]anthropicModelInfo, 0, len(models))
 	for _, model := range models {

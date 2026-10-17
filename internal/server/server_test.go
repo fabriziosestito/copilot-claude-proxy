@@ -70,7 +70,26 @@ func testModels() []copilot.Model {
 		Vendor:             "OpenAI",
 		SupportedEndpoints: []string{"/chat/completions"},
 	}
-	return []copilot.Model{sonnet, gpt}
+	sol := copilot.Model{
+		ID:                 "gpt-6.1-sol",
+		Name:               "GPT 6.1 Sol",
+		Vendor:             "OpenAI",
+		SupportedEndpoints: []string{"/responses", "ws:/responses"},
+	}
+	sol.Capabilities.Supports.Vision = true
+	kimi := copilot.Model{
+		ID:                 "kimi-k3",
+		Name:               "Kimi K3",
+		Vendor:             "Moonshot AI",
+		SupportedEndpoints: []string{"/chat/completions"},
+	}
+	legacy := copilot.Model{
+		ID:     "gpt-4o",
+		Name:   "GPT-4o",
+		Vendor: "Azure OpenAI",
+	}
+	legacy.Capabilities.Supports.Vision = true
+	return []copilot.Model{sonnet, gpt, sol, kimi, legacy}
 }
 
 func newTestHandler(t *testing.T, caller server.CopilotCaller) http.Handler {
@@ -410,6 +429,7 @@ func TestModelsListsAnthropicOnly(t *testing.T) {
 	handler := newTestHandler(t, &fakeCaller{})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Anthropic-Version", "2023-06-01")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
@@ -482,14 +502,22 @@ func TestHealthReflectsTokenAndCatalog(t *testing.T) {
 		t.Errorf("invalid token: status = %d %v, want 503 degraded", recorder.Code, payload["status"])
 	}
 
-	// A catalog with only non-Anthropic vendors cannot serve any request.
+	// A catalog with only OpenAI-dialect models still serves the OpenAI routes.
 	gptOnly := []copilot.Model{{
 		ID: "gpt-5-mini", Vendor: "OpenAI", SupportedEndpoints: []string{"/chat/completions"},
 	}}
 	recorder, payload = getHealth(newHandler(gptOnly, staticTokenHealth(true)))
+	if recorder.Code != http.StatusOK || payload["status"] != "ok" {
+		t.Errorf("openai-only catalog: status = %d %v, want 200 ok", recorder.Code, payload["status"])
+	}
+	if payload["anthropic_models"] != float64(0) || payload["openai_models"] != float64(1) {
+		t.Errorf("openai-only counts = %v/%v, want 0/1", payload["anthropic_models"], payload["openai_models"])
+	}
+
+	// An empty catalog cannot serve any request.
+	recorder, payload = getHealth(newHandler(nil, staticTokenHealth(true)))
 	if recorder.Code != http.StatusServiceUnavailable || payload["status"] != "degraded" {
-		t.Errorf("no anthropic models: status = %d %v, want 503 degraded",
-			recorder.Code, payload["status"])
+		t.Errorf("empty catalog: status = %d %v, want 503 degraded", recorder.Code, payload["status"])
 	}
 }
 

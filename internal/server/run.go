@@ -104,12 +104,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 func logCatalogSummary(ctx context.Context, logger *slog.Logger, catalog *copilot.Catalog) {
 	models := catalog.Models()
-	anthropic := 0
-	for _, model := range models {
-		if model.SupportsAnthropicMessages() {
-			anthropic++
-		}
-	}
+	counts := countByDialect(models)
 	logger.InfoContext(ctx, "model catalog loaded",
-		"models", len(models), "anthropic_models", anthropic)
+		"models", len(models), "anthropic_models", counts.anthropic, "openai_models", counts.openAI)
 }
