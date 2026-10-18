@@ -1,13 +1,17 @@
 # copilot-claude-proxy
 
-A small Go proxy that exposes GitHub Copilot as an **Anthropic-compatible API**.
+A small Go proxy that exposes GitHub Copilot as an **Anthropic-compatible API**,
+and every other Copilot model through the **OpenAI Responses and Chat
+Completions APIs**.
 
 If you already pay for GitHub Copilot, you can use it as the backend for
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instead of an
 Anthropic API key. Run the proxy, point Claude Code at it, and everything
 works as usual. Copilot understands the same API that Claude Code speaks, so
 the proxy doesn't need to translate anything: it just logs you into GitHub
-and passes your requests along.
+and passes your requests along. The same passthrough serves the OpenAI-dialect
+routes, so any OpenAI-compatible client can use the GPT, Gemini, Grok, Kimi,
+and other Copilot models.
 
 ## Installation
 
@@ -172,14 +176,37 @@ $ make build
 
 ## Endpoints
 
-| Route                            | Behavior                                                                                      |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| `POST /v1/messages`              | Enriched passthrough to Copilot's native Anthropic Messages API (streaming and non-streaming) |
-| `POST /v1/messages/count_tokens` | Local estimation (~4 chars/token, thinking blocks excluded)                                   |
-| `GET /v1/models`                 | Anthropic-format list of usable models                                                        |
-| `POST /api/event_logging`        | Swallows Anthropic SDK telemetry                                                              |
-| `GET /health`                    | Token/catalog health (503 when degraded, for monitors)                                        |
-| `GET /status`                    | Session detail for the status line: tier, token TTL, last resolved model, counters (always 200) |
+| Route                                  | Behavior                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `POST /v1/messages`                    | Enriched passthrough to Copilot's native Anthropic Messages API (streaming and non-streaming)   |
+| `POST /v1/messages/count_tokens`       | Local estimation (~4 chars/token, thinking blocks excluded)                                     |
+| `GET /v1/models`                       | Model list: Anthropic format when the request carries `Anthropic-Version`, OpenAI format otherwise |
+| `POST /v1/responses`                   | Passthrough to Copilot's OpenAI Responses API (streaming and non-streaming)                     |
+| `POST /v1/chat/completions`            | Passthrough to Copilot's OpenAI Chat Completions API (streaming and non-streaming)              |
+| `GET /openai/v1/models`                | OpenAI-format list of models that support an OpenAI endpoint                                    |
+| `POST /api/event_logging`              | Swallows Anthropic SDK telemetry                                                                |
+| `GET /health`                          | Token/catalog health with per-dialect model counts (503 when no model is servable, for monitors)  |
+| `GET /status`                          | Session detail for the status line: tier, token TTL, last resolved model, counters (always 200) |
+
+The Anthropic routes are also served under `/anthropic/v1/...`, and the OpenAI
+routes under `/openai/v1/...`. An OpenAI-compatible client can use either
+`http://127.0.0.1:4141/v1` or `http://127.0.0.1:4141/openai/v1` as its base
+URL; `/anthropic/v1/models` and `/openai/v1/models` always answer in their own
+format.
+
+Each model is accepted only on the endpoints Copilot lists for it
+(`copilot-claude-proxy models` shows them in the `ENDPOINTS` column). A model
+that does not support the requested API gets a 400 in that API's error
+format. Model aliases from `--model-map` apply to every route.
+
+```console
+$ curl -s http://127.0.0.1:4141/v1/responses \
+    -H 'content-type: application/json' \
+    -d '{"model":"gpt-6-luna","input":"Reply with the single word OK."}'
+$ curl -s http://127.0.0.1:4141/v1/chat/completions \
+    -H 'content-type: application/json' \
+    -d '{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with the single word OK."}]}'
+```
 
 ## Token storage
 

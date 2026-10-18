@@ -188,3 +188,73 @@ func TestSupportsAnthropicMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportsEndpoint(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		model    copilot.Model
+		endpoint string
+		want     bool
+	}{
+		{
+			name:     "endpoint advertised",
+			model:    copilot.Model{SupportedEndpoints: []string{"/responses", "ws:/responses"}},
+			endpoint: copilot.OpenAIResponsesEndpoint,
+			want:     true,
+		},
+		{
+			name:     "endpoint missing",
+			model:    copilot.Model{SupportedEndpoints: []string{"/responses"}},
+			endpoint: copilot.OpenAIChatCompletionsEndpoint,
+			want:     false,
+		},
+		{
+			name:     "no endpoint list non anthropic is eligible for openai",
+			model:    copilot.Model{Vendor: "Azure OpenAI"},
+			endpoint: copilot.OpenAIChatCompletionsEndpoint,
+			want:     true,
+		},
+		{
+			name:     "no endpoint list anthropic is not eligible for openai",
+			model:    copilot.Model{Vendor: "Anthropic"},
+			endpoint: copilot.OpenAIResponsesEndpoint,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.model.SupportsEndpoint(tt.endpoint); got != tt.want {
+				t.Errorf("SupportsEndpoint(%q) = %v, want %v", tt.endpoint, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSupportsOpenAI(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model copilot.Model
+		want  bool
+	}{
+		{name: "responses only", model: copilot.Model{SupportedEndpoints: []string{"/responses"}}, want: true},
+		{name: "chat only", model: copilot.Model{SupportedEndpoints: []string{"/chat/completions"}}, want: true},
+		{name: "anthropic only", model: copilot.Model{SupportedEndpoints: []string{"/v1/messages"}}, want: false},
+		{name: "no endpoint list", model: copilot.Model{Vendor: "Azure OpenAI"}, want: true},
+		{name: "no endpoint list anthropic", model: copilot.Model{Vendor: "Anthropic"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.model.SupportsOpenAI(); got != tt.want {
+				t.Errorf("SupportsOpenAI() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

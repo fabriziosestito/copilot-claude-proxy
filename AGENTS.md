@@ -5,17 +5,20 @@ Guidance for AI coding agents working in this repository.
 ## What this is
 
 A small Go proxy that exposes GitHub Copilot as an Anthropic-compatible API,
-so Claude Code can use a Copilot subscription as its backend. Copilot already
-speaks the Anthropic Messages API, so the proxy does no translation: it
-handles GitHub authentication (device flow, token in the OS keyring) and
-forwards requests.
+so Claude Code can use a Copilot subscription as its backend, and as an
+OpenAI-compatible API (Responses and Chat Completions) for every other Copilot
+model. Copilot already speaks these wire formats, so the proxy does no
+translation: it handles GitHub authentication (device flow, token in the OS
+keyring), rewrites the model name, and forwards requests. Each model is
+accepted only on the endpoints Copilot lists in `supported_endpoints`.
 
 ## Layout
 
 - `cmd/copilot-claude-proxy/` — CLI entrypoint (urfave/cli/v3): `auth`,
   `logout`, `start`, `setup`, `models` commands.
-- `internal/server/` — the Anthropic-compatible HTTP surface
-  (`/v1/messages`, streaming, token counting, `/health`).
+- `internal/server/` — the HTTP surface: Anthropic routes (`/v1/messages`,
+  token counting), OpenAI routes (`/v1/responses`, `/v1/chat/completions`,
+  `/openai/v1/models`), SSE relay, `/health` and `/status`.
 - `internal/copilot/` — Copilot API client, token exchange/refresh, model
   catalog, account-tier probing.
 - `internal/auth/` — GitHub device-flow login.
