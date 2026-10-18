@@ -12,6 +12,10 @@ import (
 // Responses and the Chat Completions routes share this shape; they differ
 // only in the upstream path and the name used in error messages.
 func openAIDialect(upstreamPath, apiName string) wireDialect {
+	sse := openAISSE()
+	if upstreamPath == copilot.OpenAIResponsesEndpoint {
+		sse = openAIResponsesSSE()
+	}
 	return wireDialect{
 		upstreamPath: upstreamPath,
 		writeError:   writeOpenAIError,
@@ -23,7 +27,7 @@ func openAIDialect(upstreamPath, apiName string) wireDialect {
 		},
 		hasImage: openAIHasImage,
 		headers:  openAIHeaders,
-		sse:      openAISSE(),
+		sse:      sse,
 	}
 }
 
